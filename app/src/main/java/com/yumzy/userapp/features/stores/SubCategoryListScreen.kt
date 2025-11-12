@@ -45,7 +45,8 @@ import kotlinx.coroutines.tasks.await
 data class SubCategory(
     val id: String,
     val name: String,
-    val imageUrl: String
+    val imageUrl: String,
+    val priority: Int? = null
 )
 
 // Data class for Mini Restaurants
@@ -112,6 +113,7 @@ fun SubCategoryListScreen(
                 }
             }
 
+
         // Fetch sub-categories
         val subCatJob = coroutineScope.launch {
             db.collection("store_sub_categories")
@@ -123,11 +125,22 @@ fun SubCategoryListScreen(
                         SubCategory(
                             id = doc.id,
                             name = doc.getString("name") ?: "",
-                            imageUrl = doc.getString("imageUrl") ?: ""
+                            imageUrl = doc.getString("imageUrl") ?: "",
+                            priority = doc.getLong("priority")?.toInt() // <-- 1. READ PRIORITY
                         )
                     }
-                    subCategories = fetchedSubCats
 
+                    // --- 2. ADD SORTING LOGIC ---
+                    subCategories = fetchedSubCats.sortedWith(
+                        compareBy<SubCategory> {
+                            it.priority ?: Int.MAX_VALUE // Items without priority go to the end
+                        }.thenBy {
+                            it.name // Secondary sort by name (A-Z)
+                        }
+                                                )
+                    // --- END OF SORTING ---
+
+                    // Use the *original* fetchedSubCats list for getting item counts
                     if (fetchedSubCats.isNotEmpty()) {
                         val subCategoryNames = fetchedSubCats.map { it.name }
                         db.collection("store_items")
