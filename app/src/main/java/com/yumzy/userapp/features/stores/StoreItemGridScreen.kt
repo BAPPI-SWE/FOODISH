@@ -88,7 +88,8 @@ data class StoreItem(
     val multiVariant: Int = 0,
     val variants: List<ItemVariant> = emptyList(),
     val miniResId: String = "",
-    val miniResName: String = ""
+    val miniResName: String = "",
+    val priority: Int? = null // <-- ADDED THIS
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,6 +141,7 @@ fun StoreItemGridScreen(
                         item.price
                     }
                 }
+                // 'NONE' uses the default 'allItems' list, which is now pre-sorted by priority
                 SortOrder.NONE -> filtered
             }
         }
@@ -156,7 +158,9 @@ fun StoreItemGridScreen(
                 val miniResName = miniResDoc.getString("name") ?: "Unknown Restaurant"
 
                 val snapshot = db.collection("store_items").whereEqualTo("miniRes", miniResId).get().await()
-                allItems = snapshot.documents.mapNotNull { doc ->
+
+                // --- MODIFICATION START ---
+                val fetchedItems = snapshot.documents.mapNotNull { doc ->
                     val multiVariant = doc.getLong("multiVariant")?.toInt() ?: 0
                     val variants = if (multiVariant >= 2) {
                         (1..multiVariant).mapNotNull { index ->
@@ -181,9 +185,17 @@ fun StoreItemGridScreen(
                         multiVariant = multiVariant,
                         variants = variants,
                         miniResId = miniResId,
-                        miniResName = miniResName
+                        miniResName = miniResName,
+                        priority = doc.getLong("priority")?.toInt() // Read priority
                     )
                 }
+
+                // Sort by priority (default), then by name
+                allItems = fetchedItems.sortedWith(
+                    compareBy<StoreItem> { it.priority ?: Int.MAX_VALUE }
+                        .thenBy { it.name }
+                )
+                // --- MODIFICATION END ---
             }
             // PATH 2: Viewing items from a Sub Category
             else if (!subCategoryName.isNullOrBlank()) {
@@ -205,7 +217,8 @@ fun StoreItemGridScreen(
                     emptyMap()
                 }
 
-                allItems = itemsWithMiniResIds.map { (doc, resId) ->
+                // --- MODIFICATION START ---
+                val fetchedItems = itemsWithMiniResIds.map { (doc, resId) ->
                     val isOpen = resId?.let { statusMap[it] } ?: true
                     val resName = resId?.let { nameMap[it] } ?: "Unknown Restaurant"
                     val multiVariant = doc.getLong("multiVariant")?.toInt() ?: 0
@@ -232,9 +245,17 @@ fun StoreItemGridScreen(
                         multiVariant = multiVariant,
                         variants = variants,
                         miniResId = resId ?: "",
-                        miniResName = resName
+                        miniResName = resName,
+                        priority = doc.getLong("priority")?.toInt() // Read priority
                     )
                 }
+
+                // Sort by priority (default), then by name
+                allItems = fetchedItems.sortedWith(
+                    compareBy<StoreItem> { it.priority ?: Int.MAX_VALUE }
+                        .thenBy { it.name }
+                )
+                // --- MODIFICATION END ---
             } else {
                 allItems = emptyList()
             }

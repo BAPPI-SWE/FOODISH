@@ -53,7 +53,8 @@ data class MiniRestaurant(
     val id: String,
     val name: String,
     val imageUrl: String,
-    val open: String // "yes" or "no"
+    val open: String, // "yes" or "no"
+    val priority: Int? = null // <-- ADDED THIS
 )
 
 // Data class for Announcements
@@ -149,14 +150,26 @@ fun SubCategoryListScreen(
                 .whereArrayContains("availableLocations", location)
                 .get()
                 .addOnSuccessListener { restaurantSnapshot ->
-                    miniRestaurants = restaurantSnapshot.documents.mapNotNull { doc ->
+                    // --- MODIFICATION START ---
+                    val fetchedRestaurants = restaurantSnapshot.documents.mapNotNull { doc ->
                         MiniRestaurant(
                             id = doc.id,
                             name = doc.getString("name") ?: "",
                             imageUrl = doc.getString("imageUrl") ?: "",
-                            open = doc.getString("open") ?: "no"
+                            open = doc.getString("open") ?: "no",
+                            priority = doc.getLong("priority")?.toInt() // Read priority
                         )
                     }
+
+                    // Sort the list by priority, then by name
+                    miniRestaurants = fetchedRestaurants.sortedWith(
+                        compareBy<MiniRestaurant> {
+                            it.priority ?: Int.MAX_VALUE // Items without priority go to the end
+                        }.thenBy {
+                            it.name // Secondary sort by name (A-Z)
+                        }
+                    )
+                    // --- MODIFICATION END ---
                 }
         }
 
