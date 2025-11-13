@@ -385,7 +385,7 @@ fun CheckoutScreen(
                         } else {
                             PriceRow(label = "Items Subtotal", amount = itemsSubtotal)
                             PriceRow(label = "Delivery Charge", amount = deliveryCharge)
-                            PriceRow(label = "Service Charge", amount = serviceCharge)
+                            PriceRow(label = "Service Charge/Tax", amount = serviceCharge)
                             Divider(
                                 Modifier.padding(vertical = 8.dp),
                                 color = Color(0xFFE0E0E0)

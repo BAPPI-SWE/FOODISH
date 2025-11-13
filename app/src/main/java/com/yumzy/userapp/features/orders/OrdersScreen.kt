@@ -540,7 +540,7 @@ fun EnhancedOrderDetailsDialog(
                     PriceDetailRow("Delivery Charge", order.deliveryCharge)
                 }
                 if (order.serviceCharge > 0) {
-                    PriceDetailRow("Service Charge", order.serviceCharge)
+                    PriceDetailRow("Service Charge/Tax", order.serviceCharge)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
