@@ -16,8 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -185,7 +183,15 @@ fun OrdersScreen(
     selectedOrder?.let { order ->
         EnhancedOrderDetailsDialog(
             order = order,
-            onDismiss = { selectedOrder = null }
+            onDismiss = { selectedOrder = null },
+            onCancelOrder = {
+                // Logic to cancel the order in Firestore
+                Firebase.firestore.collection("orders").document(order.id)
+                    .update("orderStatus", "Cancelled")
+                    .addOnSuccessListener {
+                        selectedOrder = null // Close dialog on success
+                    }
+            }
         )
     }
 }
@@ -452,8 +458,48 @@ fun formatTime(timestamp: Timestamp): String {
 @Composable
 fun EnhancedOrderDetailsDialog(
     order: Order,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onCancelOrder: () -> Unit // Added callback for cancel logic
 ) {
+    // State to control the confirmation dialog
+    var showCancelConfirmDialog by remember { mutableStateOf(false) }
+
+    // Calculate cancellability: Order is < 5 minutes old AND status is "Pending"
+    val isCancellable by remember(order) {
+        derivedStateOf {
+            val currentTime = Timestamp.now().seconds
+            val orderTime = order.createdAt.seconds
+            val diffInSeconds = currentTime - orderTime
+            // 300 seconds = 5 minutes
+            diffInSeconds < 300 && order.orderStatus == "Pending"
+        }
+    }
+
+    // Alert Dialog for confirmation
+    if (showCancelConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showCancelConfirmDialog = false },
+            title = { Text("Cancel Order?", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to cancel this order? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showCancelConfirmDialog = false
+                        onCancelOrder()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                ) {
+                    Text("Yes, Cancel")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCancelConfirmDialog = false }) {
+                    Text("No, Keep Order")
+                }
+            }
+        )
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier
@@ -554,6 +600,27 @@ fun EnhancedOrderDetailsDialog(
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
+
+                // SHOW CANCEL BUTTON IF ELIGIBLE
+                if (isCancellable) {
+                    OutlinedButton(
+                        onClick = { showCancelConfirmDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.Red
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Red)
+                    ) {
+                        Icon(Icons.Default.Cancel, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Cancel Order", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 Button(
                     onClick = onDismiss,
