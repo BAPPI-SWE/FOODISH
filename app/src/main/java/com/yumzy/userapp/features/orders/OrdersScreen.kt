@@ -68,10 +68,10 @@ fun OrdersScreen(
             kotlinx.coroutines.delay(300)
             val activity = context.findActivity()
             if (activity != null) {
-                SharedInterstitialAdManager.showAd(activity) {
-                    android.util.Log.d("OrdersScreen", "Ad flow completed")
-                }
-                hasShownAd = true
+//                SharedInterstitialAdManager.showAd(activity) {
+//                    android.util.Log.d("OrdersScreen", "Ad flow completed")
+//                }
+//                hasShownAd = true
             }
         }
     }
