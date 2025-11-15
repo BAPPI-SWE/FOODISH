@@ -31,7 +31,17 @@ import com.google.firebase.ktx.Firebase
 import com.yumzy.userapp.YLogoLoadingIndicator
 import com.yumzy.userapp.ui.theme.DarkPink
 import com.yumzy.userapp.ui.theme.DeepPink
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalContext
 
+// Data class for clickable items
+data class ClickableItem(
+    val text: String,
+    val icon: ImageVector,
+    val uri: String? = null
+)
 data class UserProfileDetails(
     val name: String = "...",
     val email: String = "...",
@@ -412,151 +422,404 @@ fun CompactInfoRow(
 
 @Composable
 fun ModernAppInfoDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "🍔 Yumzy",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = DarkPink
-                )
-                Text(
-                    text = "Food & Grocery Delivery",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
-                    fontSize = 12.sp
-                )
-            }
-        },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(28.dp),
+        title = null,
         text = {
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // App Info Section
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFFF3E5F5),
-                    shadowElevation = 2.dp
+                // App Logo/Header Section
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(DarkPink, DeepPink)
+                            ),
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+
+
+                        Text(
+                            text = "Yumzy",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 28.sp
+                        )
+
+                        Text(
+                            text = "Food & Grocery Delivery",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 13.sp
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = Color.White.copy(alpha = 0.2f)
                         ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(0xFF9C27B0),
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    Text(text = "📱", fontSize = 16.sp)
-                                }
-                            }
                             Text(
-                                text = "App Information",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF6A1B9A)
+                                text = "Version 2.0.0",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
-
-                        HorizontalDivider(color = Color(0xFF9C27B0).copy(alpha = 0.3f))
-
-                        DialogInfoRow(icon = "🔢", label = "Version", value = "1.0.0")
-                        DialogInfoRow(icon = "📅", label = "Release", value = "Oct 2025")
-                        DialogInfoRow(icon = "📱", label = "Supported Platform", value = "Android and WEB")
                     }
                 }
 
-                // Developer Section
-                Surface(
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Info Cards Section
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFFE8F5E9),
-                    shadowElevation = 2.dp
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(0xFF4CAF50),
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    Text(text = "👨‍💻", fontSize = 16.sp)
-                                }
-                            }
-                            Text(
-                                text = "Developer",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2E7D32)
-                            )
-                        }
-
-                        HorizontalDivider(color = Color(0xFF4CAF50).copy(alpha = 0.3f))
-
-                        DialogInfoRow(icon = "👤", label = "Name", value = "BAPPI")
-                        DialogInfoRow(icon = "📧", label = "Email", value = "bappi616@gmail.com")
-                        DialogInfoRow(icon = "💼", label = "LinkedIn", value = "bappi-swe")
-                    }
-                }
-
-                // Footer
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = DarkPink.copy(alpha = 0.1f)
-                ) {
-                    Text(
-                        text = "Thank you for using Yumzy! 🎉\nWe're committed to bringing you the best food delivery experience.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        color = Color(0xFF424242),
-                        modifier = Modifier.padding(16.dp),
-                        lineHeight = 20.sp
+                    // Platform Info Card
+                    InfoCard(
+                        icon = Icons.Default.Smartphone,
+                        iconColor = Color(0xFF2196F3),
+                        title = "Platform",
+                        items = listOf(
+                            "Android • Web" to Icons.Default.Check
+                        )
                     )
+
+                    // Contact Info Card
+                    ClickableInfoCard(
+                        icon = Icons.Default.Phone,
+                        iconColor = Color(0xFF4CAF50),
+                        title = "Helpline",
+                        items = listOf(
+                            ClickableItem("+880 1590093644", Icons.Default.Chat, "https://wa.me/8801590093644")
+                        )
+                    )
+
+                    // Developer Info Card
+                    ClickableInfoCard(
+                        icon = Icons.Default.Code,
+                        iconColor = Color(0xFF9C27B0),
+                        title = "Developer",
+                        items = listOf(
+                            ClickableItem("BAPPI", Icons.Default.Person, null),
+                            ClickableItem("bappi616@gmail.com", Icons.Default.Email, "mailto:bappi616@gmail.com"),
+                            ClickableItem("linkedin.com/in/bappi-swe", Icons.Default.Link, "https://linkedin.com/in/bappi-swe")
+                        )
+                    )
+
+                    // Release Info Card
+                    InfoCard(
+                        icon = Icons.Default.CalendarMonth,
+                        iconColor = Color(0xFFFF9800),
+                        title = "Release",
+                        items = listOf(
+                            "October 2025" to Icons.Default.NewReleases
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Footer Message
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFFF5F5F5)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = DarkPink.copy(alpha = 0.15f),
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = null,
+                                    tint = DarkPink,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Thank you for choosing Yumzy! We're committed to delivering excellence.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF616161),
+                            lineHeight = 18.sp,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(containerColor = DarkPink),
-                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = DarkPink
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 2.dp
+                )
             ) {
-                Text("Close", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Close",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 16.sp
+                )
             }
         },
-        shape = RoundedCornerShape(24.dp)
+        modifier = Modifier.padding(16.dp)
     )
 }
 
+@Composable
+fun ClickableInfoCard(
+    icon: ImageVector,
+    iconColor: Color,
+    title: String,
+    items: List<ClickableItem>
+) {
+    val context = LocalContext.current
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
+        ),
+        border = BorderStroke(1.dp, Color(0xFFE0E0E0))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Card Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = iconColor.copy(alpha = 0.12f),
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF212121),
+                    fontSize = 16.sp
+                )
+            }
+
+            // Card Items
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items.forEachIndexed { index, item ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (item.uri != null) {
+                                    Modifier.clickable {
+                                        try {
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(item.uri))
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            // Handle error silently
+                                        }
+                                    }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = null,
+                            tint = iconColor.copy(alpha = 0.7f),
+                            modifier = Modifier.size(18.dp)
+                        )
+
+                        Text(
+                            text = item.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (item.uri != null) iconColor else Color(0xFF424242),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        if (item.uri != null) {
+                            Spacer(Modifier.weight(1f))
+                            Icon(
+                                imageVector = Icons.Default.OpenInNew,
+                                contentDescription = "Open",
+                                tint = iconColor.copy(alpha = 0.5f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    if (index < items.size - 1) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 28.dp),
+                            thickness = 0.5.dp,
+                            color = Color(0xFFEEEEEE)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun InfoCard(
+    icon: ImageVector,
+    iconColor: Color,
+    title: String,
+    items: List<Pair<String, ImageVector>>
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
+        ),
+        border = BorderStroke(1.dp, Color(0xFFE0E0E0))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Card Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = iconColor.copy(alpha = 0.12f),
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = iconColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF212121),
+                    fontSize = 16.sp
+                )
+            }
+
+            // Card Items
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items.forEachIndexed { index, (text, itemIcon) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = itemIcon,
+                            contentDescription = null,
+                            tint = iconColor.copy(alpha = 0.7f),
+                            modifier = Modifier.size(18.dp)
+                        )
+
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color(0xFF424242),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    if (index < items.size - 1) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 28.dp),
+                            thickness = 0.5.dp,
+                            color = Color(0xFFEEEEEE)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 @Composable
 fun DialogInfoRow(icon: String, label: String, value: String) {
     Row(
