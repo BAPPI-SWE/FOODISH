@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,7 @@ import coil.compose.AsyncImage
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
+import com.yumzy.userapp.R
 import com.yumzy.userapp.YLogoLoadingIndicator
 import com.yumzy.userapp.ui.theme.DeepPink
 import com.yumzy.userapp.ui.theme.softC
@@ -55,7 +57,7 @@ data class MiniRestaurant(
     val name: String,
     val imageUrl: String,
     val open: String, // "yes" or "no"
-    val priority: Int? = null // <-- ADDED THIS
+    val priority: Int? = null
 )
 
 // Data class for Announcements
@@ -126,21 +128,18 @@ fun SubCategoryListScreen(
                             id = doc.id,
                             name = doc.getString("name") ?: "",
                             imageUrl = doc.getString("imageUrl") ?: "",
-                            priority = doc.getLong("priority")?.toInt() // <-- 1. READ PRIORITY
+                            priority = doc.getLong("priority")?.toInt()
                         )
                     }
 
-                    // --- 2. ADD SORTING LOGIC ---
                     subCategories = fetchedSubCats.sortedWith(
                         compareBy<SubCategory> {
-                            it.priority ?: Int.MAX_VALUE // Items without priority go to the end
+                            it.priority ?: Int.MAX_VALUE
                         }.thenBy {
-                            it.name // Secondary sort by name (A-Z)
+                            it.name
                         }
-                                                )
-                    // --- END OF SORTING ---
+                    )
 
-                    // Use the *original* fetchedSubCats list for getting item counts
                     if (fetchedSubCats.isNotEmpty()) {
                         val subCategoryNames = fetchedSubCats.map { it.name }
                         db.collection("store_items")
@@ -163,26 +162,23 @@ fun SubCategoryListScreen(
                 .whereArrayContains("availableLocations", location)
                 .get()
                 .addOnSuccessListener { restaurantSnapshot ->
-                    // --- MODIFICATION START ---
                     val fetchedRestaurants = restaurantSnapshot.documents.mapNotNull { doc ->
                         MiniRestaurant(
                             id = doc.id,
                             name = doc.getString("name") ?: "",
                             imageUrl = doc.getString("imageUrl") ?: "",
                             open = doc.getString("open") ?: "no",
-                            priority = doc.getLong("priority")?.toInt() // Read priority
+                            priority = doc.getLong("priority")?.toInt()
                         )
                     }
 
-                    // Sort the list by priority, then by name
                     miniRestaurants = fetchedRestaurants.sortedWith(
                         compareBy<MiniRestaurant> {
-                            it.priority ?: Int.MAX_VALUE // Items without priority go to the end
+                            it.priority ?: Int.MAX_VALUE
                         }.thenBy {
-                            it.name // Secondary sort by name (A-Z)
+                            it.name
                         }
                     )
-                    // --- MODIFICATION END ---
                 }
         }
 
@@ -408,14 +404,16 @@ fun MiniRestaurantCard(restaurant: MiniRestaurant, onClick: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Background Image
+            // Background Image - FIXED: Added placeholder and error
             AsyncImage(
                 model = restaurant.imageUrl,
                 contentDescription = restaurant.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(RoundedCornerShape(20.dp))
+                    .clip(RoundedCornerShape(20.dp)),
+                placeholder = painterResource(id = R.drawable.img),
+                error = painterResource(id = R.drawable.img)
             )
 
             // Gradient Overlay
@@ -606,11 +604,14 @@ fun SubCategoryCard(subCategory: SubCategory, itemCount: Int, onClick: () -> Uni
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, softC)
             ) {
+                // FIXED: Added placeholder and error
                 AsyncImage(
                     model = subCategory.imageUrl,
                     contentDescription = subCategory.name,
                     modifier = Modifier.fillMaxSize().clip(CircleShape).padding(0.dp),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    placeholder = painterResource(id = R.drawable.img),
+                    error = painterResource(id = R.drawable.img)
                 )
             }
         }
