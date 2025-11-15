@@ -61,6 +61,9 @@ import com.yumzy.userapp.ui.theme.DarkPink
 import com.yumzy.userapp.ui.theme.DeepPink
 import kotlinx.coroutines.tasks.await
 
+import androidx.compose.ui.res.painterResource
+import com.yumzy.userapp.R
+
 // Data class for item variants
 data class ItemVariant(
     val name: String = "",
@@ -962,7 +965,9 @@ fun StoreItemCard(
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop,
+                        placeholder = painterResource(id = R.drawable.img),  // ← ADD THIS
+                        error = painterResource(id = R.drawable.img)          // ← ADD THIS
                     )
                     Box(
                         modifier = Modifier
