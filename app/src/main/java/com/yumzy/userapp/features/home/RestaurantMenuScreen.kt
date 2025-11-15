@@ -46,7 +46,14 @@ import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 
 // Data classes defined locally
-data class PreOrderCategory(val id: String = "", val name: String = "", val startTime: String = "", val endTime: String = "", val deliveryTime: String = "")
+data class PreOrderCategory(
+    val id: String = "",
+    val name: String = "",
+    val startTime: String = "",
+    val endTime: String = "",
+    val deliveryTime: String = "",
+    val open: Boolean = false
+)
 data class MenuItem(val id: String = "", val name: String = "", val price: Double = 0.0, val category: String = "")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,9 +81,21 @@ fun RestaurantMenuScreen(
         val db = Firebase.firestore
         val restaurantRef = db.collection("restaurants").document(restaurantId)
 
-        restaurantRef.collection("preOrderCategories").get()
-            .addOnSuccessListener { snapshot ->
-                preOrderCategories = snapshot.documents.mapNotNull { doc -> doc.toObject(PreOrderCategory::class.java)?.copy(id = doc.id) }
+        // Updated to fetch the "open" field
+        restaurantRef.collection("preOrderCategories")
+            .addSnapshotListener { snapshot, _ ->
+                snapshot?.let {
+                    preOrderCategories = it.documents.mapNotNull { doc ->
+                        PreOrderCategory(
+                            id = doc.id,
+                            name = doc.getString("name") ?: "",
+                            startTime = doc.getString("startTime") ?: "",
+                            endTime = doc.getString("endTime") ?: "",
+                            deliveryTime = doc.getString("deliveryTime") ?: "",
+                            open = doc.getBoolean("open") ?: false
+                        )
+                    }
+                }
             }
 
         restaurantRef.collection("menuItems").whereEqualTo("category", "Current Menu")
@@ -193,7 +212,15 @@ fun RestaurantMenuScreen(
                         0 -> PreOrderContent(
                             preOrderCategories = preOrderCategories,
                             onCategoryClick = { category ->
-                                onCategoryClick(restaurantId, restaurantName, "Pre-order ${category.name}")
+                                if (category.open) {
+                                    onCategoryClick(restaurantId, restaurantName, "Pre-order ${category.name}")
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "😔 You can't order now. This category is currently closed.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
                         )
                         1 -> CurrentMenuContent(
@@ -335,13 +362,17 @@ private fun CurrentMenuContent(
 
 @Composable
 private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick: () -> Unit) {
+    val isOpen = category.open
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isOpen) Color.White else Color.White.copy(alpha = 0.6f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isOpen) 4.dp else 2.dp)
     ) {
         Box(
             modifier = Modifier.fillMaxWidth()
@@ -354,8 +385,8 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                     .background(
                         brush = Brush.horizontalGradient(
                             colors = listOf(
-                                cardColor.copy(alpha = 0.12f),
-                                cardColor.copy(alpha = 0.03f)
+                                cardColor.copy(alpha = if (isOpen) 0.12f else 0.06f),
+                                cardColor.copy(alpha = if (isOpen) 0.03f else 0.01f)
                             )
                         )
                     )
@@ -370,11 +401,21 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                 Icon(
                     imageVector = Icons.Default.Restaurant,
                     contentDescription = null,
-                    tint = cardColor.copy(alpha = 0.08f),
+                    tint = cardColor.copy(alpha = if (isOpen) 0.08f else 0.04f),
                     modifier = Modifier
                         .size(180.dp)
                         .align(Alignment.CenterEnd)
                         .offset(x = 40.dp, y = 10.dp)
+                )
+            }
+
+            // Closed overlay
+            if (!isOpen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .background(Color.LightGray.copy(alpha = 0.1f))
                 )
             }
 
@@ -400,7 +441,7 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = cardColor,
+                                color = if (isOpen) cardColor else Color.Gray,
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Box(
@@ -408,7 +449,7 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Restaurant,
+                                        imageVector = if (isOpen) Icons.Default.Restaurant else Icons.Default.Lock,
                                         contentDescription = null,
                                         tint = Color.White,
                                         modifier = Modifier.size(20.dp)
@@ -416,14 +457,24 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                                 }
                             }
 
-                            Text(
-                                text = category.name,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1A1A1A),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Column {
+                                Text(
+                                    text = category.name,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isOpen) Color(0xFF1A1A1A) else Color.Gray,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (!isOpen) {
+                                    Text(
+                                        text = "Currently Closed",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.Red,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
                         }
 
                         // Order timing
@@ -434,13 +485,13 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                             Icon(
                                 imageVector = Icons.Default.Schedule,
                                 contentDescription = null,
-                                tint = Color(0xFF666666),
+                                tint = if (isOpen) Color(0xFF666666) else Color.Gray,
                                 modifier = Modifier.size(16.dp)
                             )
                             Text(
                                 text = "Order: ${category.startTime} - ${category.endTime}",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF666666),
+                                color = if (isOpen) Color(0xFF666666) else Color.Gray,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 13.sp
                             )
@@ -450,7 +501,7 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                     // Right side - Arrow button
                     Surface(
                         shape = CircleShape,
-                        color = cardColor,
+                        color = if (isOpen) cardColor else Color.Gray,
                         modifier = Modifier.size(48.dp)
                     ) {
                         Box(
@@ -458,8 +509,8 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.ArrowForward,
-                                contentDescription = "View menu",
+                                imageVector = if (isOpen) Icons.Default.ArrowForward else Icons.Default.Lock,
+                                contentDescription = if (isOpen) "View menu" else "Locked",
                                 tint = Color.White,
                                 modifier = Modifier.size(24.dp)
                             )
@@ -470,8 +521,8 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                 // Footer section with delivery info
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = cardColor.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(bottomStart =20.dp, bottomEnd = 20.dp)
+                    color = if (isOpen) cardColor.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
                 ) {
                     Row(
                         modifier = Modifier
@@ -483,13 +534,13 @@ private fun PreOrderHeader(category: PreOrderCategory, cardColor: Color, onClick
                         Icon(
                             imageVector = Icons.Default.DeliveryDining,
                             contentDescription = null,
-                            tint = cardColor,
+                            tint = if (isOpen) cardColor else Color.Gray,
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
                             text = "Delivery: ${category.deliveryTime}",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = cardColor,
+                            color = if (isOpen) cardColor else Color.Gray,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
                         )
