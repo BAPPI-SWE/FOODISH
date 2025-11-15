@@ -774,7 +774,9 @@ fun OfferSlider(offers: List<Offer>) {
                 model = offers[page].imageUrl,
                 contentDescription = "Offer",
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                placeholder = painterResource(id = R.drawable.offer),  // ← ADDED
+                error = painterResource(id = R.drawable.offer)          // ← ADDED
             )
         }
     }
