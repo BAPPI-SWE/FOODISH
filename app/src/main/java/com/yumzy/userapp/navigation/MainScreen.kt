@@ -52,6 +52,7 @@ import com.yumzy.userapp.features.cart.CheckoutScreen
 import com.yumzy.userapp.features.home.HomeScreen
 import com.yumzy.userapp.features.home.PreOrderCategoryMenuScreen
 import com.yumzy.userapp.features.home.RestaurantMenuScreen
+import com.yumzy.userapp.features.home.RestaurantType
 import com.yumzy.userapp.features.orders.OrdersScreen
 import com.yumzy.userapp.features.profile.AccountScreen
 import com.yumzy.userapp.features.profile.EditProfileScreen
@@ -230,9 +231,17 @@ fun MainScreen(
         ) {
             composable(Screen.Home.route) {
                 HomeScreen(
-                    onRestaurantClick = { restaurantId, restaurantName ->
-                        val encodedName = URLEncoder.encode(restaurantName, StandardCharsets.UTF_8.toString())
-                        navController.navigate("${Screen.RestaurantMenu.route}/$restaurantId/$encodedName")
+                    // UPDATED: Now clicking a restaurant navigates based on TYPE
+                    onRestaurantClick = { id, name, type ->
+                        val encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8.toString())
+
+                        if (type == RestaurantType.MAIN) {
+                            // Navigate to OLD Restaurant Menu
+                            navController.navigate("${Screen.RestaurantMenu.route}/$id/$encodedName")
+                        } else {
+                            // Navigate to NEW Mini Restaurant Grid
+                            navController.navigate("${Screen.StoreItemGrid.route}?miniResId=$id&title=$encodedName")
+                        }
                     },
                     onStoreCategoryClick = { categoryId, categoryName ->
                         val encodedCatName = URLEncoder.encode(categoryName, StandardCharsets.UTF_8.toString())

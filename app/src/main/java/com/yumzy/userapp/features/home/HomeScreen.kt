@@ -59,6 +59,8 @@ import com.yumzy.userapp.ui.theme.BrandPink
 import com.yumzy.userapp.ui.theme.DeepPink
 import com.yumzy.userapp.ui.theme.DarkPink
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlin.random.Random
 
 // --- Data classes for Screen ---
@@ -66,11 +68,28 @@ data class Offer(
     val imageUrl: String = "",
     val availableLocations: List<String> = emptyList()
 )
-data class Restaurant(val ownerId: String, val name: String, val cuisine: String, val deliveryLocations: List<String>, val imageUrl: String?)
+
+enum class RestaurantType {
+    MAIN, // Old large restaurants
+    MINI  // New mini shops/restaurants
+}
+
+// UPDATED: Restaurant data class to handle both types and priority
+data class Restaurant(
+    val id: String,
+    val name: String,
+    val cuisine: String,
+    val imageUrl: String?,
+    val open: String = "yes",
+    val type: RestaurantType, // To distinguish between Main and Mini
+    val priority: Int? = null // For sorting
+)
+
 data class Category(val name: String, val icon: ImageVector, val id: String)
 data class UserProfile(val baseLocation: String = "", val subLocation: String = "")
 data class SubCategorySearchResult(val name: String, val itemCount: Int, val imageUrl: String = "")
-// Add MiniRestaurant data class for search
+
+// MiniRestaurant data class for search (kept for search consistency)
 data class MiniRestaurant(
     val id: String,
     val name: String,
@@ -81,7 +100,7 @@ data class MiniRestaurant(
 sealed class SearchResult {
     data class RestaurantResult(val restaurant: Restaurant) : SearchResult()
     data class SubCategoryResult(val subCategory: SubCategorySearchResult) : SearchResult()
-    data class MiniRestaurantResult(val miniRestaurant: MiniRestaurant) : SearchResult() // Add MiniRestaurant result
+    data class MiniRestaurantResult(val miniRestaurant: MiniRestaurant) : SearchResult()
 }
 
 // Love bubble data class
@@ -96,26 +115,28 @@ data class LoveBubble(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onRestaurantClick: (restaurantId: String, restaurantName: String) -> Unit,
+    // Updated callback to include RestaurantType
+    onRestaurantClick: (restaurantId: String, restaurantName: String, type: RestaurantType) -> Unit,
     onStoreCategoryClick: (categoryId: String, categoryName: String) -> Unit,
     onSubCategorySearchClick: (subCategoryName: String) -> Unit,
-    onMiniRestaurantClick: (miniResId: String, miniResName: String) -> Unit, // Add mini restaurant click handler
+    onMiniRestaurantClick: (miniResId: String, miniResName: String) -> Unit,
     onNotificationClick: () -> Unit
 ) {
     var userProfile by remember { mutableStateOf<UserProfile?>(null) }
-    var restaurants by remember { mutableStateOf<List<Restaurant>>(emptyList()) }
+    var combinedRestaurants by remember { mutableStateOf<List<Restaurant>>(emptyList()) }
     var allSubCategories by remember { mutableStateOf<List<SubCategorySearchResult>>(emptyList()) }
-    var miniRestaurants by remember { mutableStateOf<List<MiniRestaurant>>(emptyList()) } // Add mini restaurants state
+    var miniRestaurantsSearch by remember { mutableStateOf<List<MiniRestaurant>>(emptyList()) }
     var offers by remember { mutableStateOf<List<Offer>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var showLoveBubbles by remember { mutableStateOf(false) }
     val lazyListState = rememberLazyListState()
 
-    val searchResults by remember(searchQuery, restaurants, allSubCategories, miniRestaurants) {
+    val searchResults by remember(searchQuery, combinedRestaurants, allSubCategories, miniRestaurantsSearch) {
         derivedStateOf {
             if (searchQuery.isNotBlank()) {
-                val restaurantResults = restaurants.filter { restaurant ->
+                // Filter the displayed combined restaurants
+                val restaurantResults = combinedRestaurants.filter { restaurant ->
                     restaurant.name.contains(searchQuery, ignoreCase = true) ||
                             restaurant.cuisine.contains(searchQuery, ignoreCase = true)
                 }.map { SearchResult.RestaurantResult(it) }
@@ -124,12 +145,19 @@ fun HomeScreen(
                     subCategory.name.contains(searchQuery, ignoreCase = true)
                 }.map { SearchResult.SubCategoryResult(it) }
 
-                // Add mini restaurant search results
-                val miniRestaurantResults = miniRestaurants.filter { miniRestaurant ->
+                // Filter the dedicated search mini restaurant list
+                val miniRestaurantResults = miniRestaurantsSearch.filter { miniRestaurant ->
                     miniRestaurant.name.contains(searchQuery, ignoreCase = true)
                 }.map { SearchResult.MiniRestaurantResult(it) }
 
-                restaurantResults + subCategoryResults + miniRestaurantResults
+                // Combine results
+                (restaurantResults + subCategoryResults + miniRestaurantResults).distinctBy {
+                    when(it) {
+                        is SearchResult.RestaurantResult -> "RES_${it.restaurant.id}"
+                        is SearchResult.SubCategoryResult -> "SUB_${it.subCategory.name}"
+                        is SearchResult.MiniRestaurantResult -> "MINI_${it.miniRestaurant.id}"
+                    }
+                }
             } else {
                 emptyList()
             }
@@ -167,23 +195,7 @@ fun HomeScreen(
             val db = Firebase.firestore
             val userLocation = userProfile!!.subLocation
 
-            db.collection("restaurants")
-                .whereArrayContains("deliveryLocations", userLocation)
-                .addSnapshotListener { snapshot, _ ->
-                    isLoading = false
-                    snapshot?.let {
-                        restaurants = it.documents.mapNotNull { doc ->
-                            Restaurant(
-                                ownerId = doc.id,
-                                name = doc.getString("name") ?: "No Name",
-                                cuisine = doc.getString("cuisine") ?: "No Cuisine",
-                                deliveryLocations = doc.get("deliveryLocations") as? List<String> ?: emptyList(),
-                                imageUrl = doc.getString("imageUrl")
-                            )
-                        }
-                    }
-                }
-
+            // Fetch Offers
             db.collection("offers")
                 .whereArrayContains("availableLocations", userLocation)
                 .get()
@@ -193,6 +205,7 @@ fun HomeScreen(
                     }
                 }
 
+            // Fetch SubCategories for search
             db.collection("store_sub_categories")
                 .whereArrayContains("availableLocations", userLocation)
                 .get()
@@ -222,12 +235,12 @@ fun HomeScreen(
                     }
                 }
 
-            // Fetch mini restaurants for search
+            // Fetch mini restaurants for SEARCH purpose
             db.collection("mini_restaurants")
                 .whereArrayContains("availableLocations", userLocation)
                 .get()
                 .addOnSuccessListener { restaurantSnapshot ->
-                    miniRestaurants = restaurantSnapshot.documents.mapNotNull { doc ->
+                    miniRestaurantsSearch = restaurantSnapshot.documents.mapNotNull { doc ->
                         MiniRestaurant(
                             id = doc.id,
                             name = doc.getString("name") ?: "",
@@ -236,11 +249,64 @@ fun HomeScreen(
                         )
                     }
                 }
+
+            // --- COMBINED FETCHING LOGIC START ---
+            try {
+                // 1. Fetch Main Restaurants (Old)
+                val mainResSnapshot = db.collection("restaurants")
+                    .whereArrayContains("deliveryLocations", userLocation)
+                    .get().await()
+
+                val mainRestaurants = mainResSnapshot.documents.mapNotNull { doc ->
+                    Restaurant(
+                        id = doc.id,
+                        name = doc.getString("name") ?: "No Name",
+                        cuisine = doc.getString("cuisine") ?: "General",
+                        imageUrl = doc.getString("imageUrl"),
+                        open = "yes", // Main restaurants assumed open or logic can be added
+                        type = RestaurantType.MAIN,
+                        priority = doc.getLong("priority")?.toInt()
+                    )
+                }
+
+                // 2. Fetch Mini Restaurants (New)
+                val miniResSnapshot = db.collection("mini_restaurants")
+                    .whereArrayContains("availableLocations", userLocation)
+                    .get().await()
+
+                val miniRestaurants = miniResSnapshot.documents.mapNotNull { doc ->
+                    Restaurant(
+                        id = doc.id,
+                        name = doc.getString("name") ?: "No Name",
+                        cuisine = doc.getString("cuisine") ?: "General",
+                        imageUrl = doc.getString("imageUrl"),
+                        open = doc.getString("open") ?: "yes",
+                        type = RestaurantType.MINI,
+                        priority = doc.getLong("priority")?.toInt()
+                    )
+                }
+
+                // 3. Combine and Sort by Priority
+                // Items with a priority number come first (ascending order: 1, 2, 3), nulls come last
+                val combined = (mainRestaurants + miniRestaurants).sortedWith(
+                    compareBy<Restaurant> { it.priority ?: Int.MAX_VALUE }
+                        .thenBy { it.name }
+                )
+
+                combinedRestaurants = combined
+                isLoading = false
+
+            } catch (e: Exception) {
+                isLoading = false
+                combinedRestaurants = emptyList()
+            }
+            // --- COMBINED FETCHING LOGIC END ---
+
         } else if (userProfile != null) {
             isLoading = false
-            restaurants = emptyList()
+            combinedRestaurants = emptyList()
             offers = emptyList()
-            miniRestaurants = emptyList()
+            miniRestaurantsSearch = emptyList()
         }
     }
 
@@ -307,7 +373,13 @@ fun HomeScreen(
                                 is SearchResult.RestaurantResult -> {
                                     RestaurantCard(
                                         restaurant = result.restaurant,
-                                        onClick = { onRestaurantClick(result.restaurant.ownerId, result.restaurant.name) },
+                                        onClick = {
+                                            onRestaurantClick(
+                                                result.restaurant.id,
+                                                result.restaurant.name,
+                                                result.restaurant.type
+                                            )
+                                        },
                                         modifier = Modifier.padding(horizontal = 16.dp)
                                     )
                                     Spacer(modifier = Modifier.height(16.dp))
@@ -339,7 +411,7 @@ fun HomeScreen(
                     item { Spacer(modifier = Modifier.height(20.dp)) }
                     item {
                         Text(
-                            text = "Available Hotels Near You",
+                            text = "Available Restaurants & Shops",
                             fontSize = 19.sp,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
@@ -349,7 +421,9 @@ fun HomeScreen(
                     if (isLoading) {
                         item {
                             Box(
-                                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 YLogoLoadingIndicator(
@@ -366,7 +440,7 @@ fun HomeScreen(
                                 message = "Please set your delivery hall/building in your profile to find nearby restaurants."
                             )
                         }
-                    } else if (restaurants.isEmpty()) {
+                    } else if (combinedRestaurants.isEmpty()) {
                         item {
                             EmptyStateMessage(
                                 icon = Icons.Default.Restaurant,
@@ -374,10 +448,16 @@ fun HomeScreen(
                             )
                         }
                     } else {
-                        items(restaurants) { restaurant ->
+                        items(combinedRestaurants) { restaurant ->
                             RestaurantCard(
                                 restaurant = restaurant,
-                                onClick = { onRestaurantClick(restaurant.ownerId, restaurant.name) },
+                                onClick = {
+                                    onRestaurantClick(
+                                        restaurant.id,
+                                        restaurant.name,
+                                        restaurant.type
+                                    )
+                                },
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
                             Spacer(modifier = Modifier.height(16.dp))
@@ -775,8 +855,8 @@ fun OfferSlider(offers: List<Offer>) {
                 contentDescription = "Offer",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
-                placeholder = painterResource(id = R.drawable.offer),  // ← ADDED
-                error = painterResource(id = R.drawable.offer)          // ← ADDED
+                placeholder = painterResource(id = R.drawable.offer),
+                error = painterResource(id = R.drawable.offer)
             )
         }
     }
@@ -845,10 +925,12 @@ fun CategoryItem(category: Category, onClick: () -> Unit) {
 @Composable
 fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifier = Modifier) {
     var isFavorite by rememberSaveable { mutableStateOf(false) }
+    val isClosed = restaurant.open.equals("no", ignoreCase = true)
+
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = !isClosed, onClick = onClick)
             .shadow(
                 elevation = 8.dp,
                 shape = RoundedCornerShape(16.dp),
@@ -875,6 +957,29 @@ fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifi
                         placeholder = painterResource(id = R.drawable.ic_shopping_bag),
                         error = painterResource(id = R.drawable.ic_shopping_bag)
                     )
+
+                    // CLOSED OVERLAY
+                    if (isClosed) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = DeepPink
+                            ) {
+                                Text(
+                                    text = "CLOSED",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
 
                     Box(
                         modifier = Modifier
