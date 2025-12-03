@@ -7,7 +7,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -37,6 +36,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -54,15 +54,13 @@ import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
+import com.yumzy.userapp.R
 import com.yumzy.userapp.YLogoLoadingIndicator
 import com.yumzy.userapp.features.cart.CartViewModel
 import com.yumzy.userapp.ui.theme.BrandPink
 import com.yumzy.userapp.ui.theme.DarkPink
 import com.yumzy.userapp.ui.theme.DeepPink
 import kotlinx.coroutines.tasks.await
-
-import androidx.compose.ui.res.painterResource
-import com.yumzy.userapp.R
 
 // Data class for item variants
 data class ItemVariant(
@@ -92,7 +90,7 @@ data class StoreItem(
     val variants: List<ItemVariant> = emptyList(),
     val miniResId: String = "",
     val miniResName: String = "",
-    val priority: Int? = null // <-- ADDED THIS
+    val priority: Int? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,7 +101,8 @@ fun StoreItemGridScreen(
     miniResId: String?,
     onBackClicked: () -> Unit,
     cartViewModel: CartViewModel = viewModel(),
-    onPlaceOrder: (restaurantId: String) -> Unit
+    onPlaceOrder: (restaurantId: String) -> Unit,
+    onViewCartClick: () -> Unit
 ) {
     var allItems by remember { mutableStateOf<List<StoreItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -112,9 +111,13 @@ fun StoreItemGridScreen(
     var sortOrder by remember { mutableStateOf<SortOrder>(SortOrder.NONE) }
 
     val cartSelection by cartViewModel.currentSelection.collectAsState()
+    val savedCart by cartViewModel.savedCart.collectAsState()
+
     val context = LocalContext.current
 
-    val totalItems = cartSelection.values.sumOf { it.quantity }
+    val currentSelectionCount = cartSelection.values.sumOf { it.quantity }
+    val savedCartCount = savedCart.values.sumOf { it.quantity }
+    val totalGlobalCartCount = currentSelectionCount + savedCartCount
 
     // Filter and sort items based on search query and sort order
     val filteredItems by remember(searchQuery, allItems, sortOrder) {
@@ -144,7 +147,6 @@ fun StoreItemGridScreen(
                         item.price
                     }
                 }
-                // 'NONE' uses the default 'allItems' list, which is now pre-sorted by priority
                 SortOrder.NONE -> filtered
             }
         }
@@ -154,7 +156,6 @@ fun StoreItemGridScreen(
         isLoading = true
         val db = Firebase.firestore
         try {
-            // PATH 1: Viewing items from a specific Mini Restaurant
             if (!miniResId.isNullOrBlank()) {
                 val miniResDoc = db.collection("mini_restaurants").document(miniResId).get().await()
                 val isRestaurantOpen = miniResDoc.getString("open")?.equals("yes", ignoreCase = true) ?: false
@@ -162,7 +163,6 @@ fun StoreItemGridScreen(
 
                 val snapshot = db.collection("store_items").whereEqualTo("miniRes", miniResId).get().await()
 
-                // --- MODIFICATION START ---
                 val fetchedItems = snapshot.documents.mapNotNull { doc ->
                     val multiVariant = doc.getLong("multiVariant")?.toInt() ?: 0
                     val variants = if (multiVariant >= 2) {
@@ -189,19 +189,15 @@ fun StoreItemGridScreen(
                         variants = variants,
                         miniResId = miniResId,
                         miniResName = miniResName,
-                        priority = doc.getLong("priority")?.toInt() // Read priority
+                        priority = doc.getLong("priority")?.toInt()
                     )
                 }
 
-                // Sort by priority (default), then by name
                 allItems = fetchedItems.sortedWith(
                     compareBy<StoreItem> { it.priority ?: Int.MAX_VALUE }
                         .thenBy { it.name }
                 )
-                // --- MODIFICATION END ---
-            }
-            // PATH 2: Viewing items from a Sub Category
-            else if (!subCategoryName.isNullOrBlank()) {
+            } else if (!subCategoryName.isNullOrBlank()) {
                 val itemsSnapshot = db.collection("store_items").whereEqualTo("subCategory", subCategoryName).get().await()
                 val itemsWithMiniResIds = itemsSnapshot.documents.map { it to it.getString("miniRes") }
 
@@ -220,7 +216,6 @@ fun StoreItemGridScreen(
                     emptyMap()
                 }
 
-                // --- MODIFICATION START ---
                 val fetchedItems = itemsWithMiniResIds.map { (doc, resId) ->
                     val isOpen = resId?.let { statusMap[it] } ?: true
                     val resName = resId?.let { nameMap[it] } ?: "Unknown Restaurant"
@@ -249,16 +244,14 @@ fun StoreItemGridScreen(
                         variants = variants,
                         miniResId = resId ?: "",
                         miniResName = resName,
-                        priority = doc.getLong("priority")?.toInt() // Read priority
+                        priority = doc.getLong("priority")?.toInt()
                     )
                 }
 
-                // Sort by priority (default), then by name
                 allItems = fetchedItems.sortedWith(
                     compareBy<StoreItem> { it.priority ?: Int.MAX_VALUE }
                         .thenBy { it.name }
                 )
-                // --- MODIFICATION END ---
             } else {
                 allItems = emptyList()
             }
@@ -295,8 +288,52 @@ fun StoreItemGridScreen(
                         cartViewModel.saveSelectionToCart()
                         onPlaceOrder("yumzy_store")
                     },
-                    totalItems = totalItems
+                    totalItems = currentSelectionCount
                 )
+            }
+        },
+        // --- NEW: Floating Action Button for Cart ---
+        floatingActionButton = {
+            if (totalGlobalCartCount > 0) {
+                FloatingActionButton(
+                    onClick = {
+                        cartViewModel.saveSelectionToCart()
+                        onViewCartClick()
+                    },
+                    containerColor = DarkPink,
+                    contentColor = Color.White,
+                    shape = CircleShape,
+                    elevation = FloatingActionButtonDefaults.elevation(8.dp),
+                    modifier = Modifier.padding(bottom = if (cartSelection.isNotEmpty()) 16.dp else 0.dp) // Lift up if bottom bar visible? Scaffold handles this automatically usually, but padding ensures safety
+                ) {
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        Icon(
+                            imageVector = Icons.Default.ShoppingCart,
+                            contentDescription = "View Cart",
+                            modifier = Modifier.padding(12.dp).size(24.dp)
+                        )
+                        // Badge logic
+                        if (totalGlobalCartCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = 6.dp, y = (-2).dp)
+                                    .size(18.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White)
+                                    .padding(2.dp)
+                                    .background(Color.Red, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (totalGlobalCartCount > 99) "99+" else totalGlobalCartCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     ) { paddingValues ->
@@ -385,7 +422,6 @@ fun ModernSearchTopBar(
     var isFocused by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
 
-    // Request focus when search becomes active
     LaunchedEffect(isSearchActive) {
         if (isSearchActive) {
             focusRequester.requestFocus()
@@ -393,7 +429,6 @@ fun ModernSearchTopBar(
     }
 
     if (!isSearchActive) {
-        // Original TopBar style
         TopAppBar(
             title = {
                 Text(
@@ -605,6 +640,8 @@ fun ModernSearchTopBar(
     }
 }
 
+// ... MultiVariantDialog, StoreItemDetailDialog, StoreItemCard, ModernQuantitySelector, BottomBarWithTwoButtons, BannerAd ...
+// (These remain exactly the same as before; assume they are present in the final file)
 @Composable
 fun MultiVariantDialog(
     item: StoreItem,
@@ -966,8 +1003,8 @@ fun StoreItemCard(
                             .fillMaxSize()
                             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
                         contentScale = ContentScale.Crop,
-                        placeholder = painterResource(id = R.drawable.img),  // ← ADD THIS
-                        error = painterResource(id = R.drawable.img)          // ← ADD THIS
+                        placeholder = painterResource(id = R.drawable.img),
+                        error = painterResource(id = R.drawable.img)
                     )
                     Box(
                         modifier = Modifier

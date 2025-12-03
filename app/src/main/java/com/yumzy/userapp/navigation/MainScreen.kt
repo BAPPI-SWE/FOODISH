@@ -137,7 +137,7 @@ fun CustomIconRenderer(
 @Composable
 fun MainScreen(
     onSignOut: () -> Unit,
-    isConnected: Boolean // ← add this line
+    isConnected: Boolean
 ) {
 
     val navController = rememberNavController()
@@ -231,15 +231,12 @@ fun MainScreen(
         ) {
             composable(Screen.Home.route) {
                 HomeScreen(
-                    // UPDATED: Now clicking a restaurant navigates based on TYPE
                     onRestaurantClick = { id, name, type ->
                         val encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8.toString())
 
                         if (type == RestaurantType.MAIN) {
-                            // Navigate to OLD Restaurant Menu
                             navController.navigate("${Screen.RestaurantMenu.route}/$id/$encodedName")
                         } else {
-                            // Navigate to NEW Mini Restaurant Grid
                             navController.navigate("${Screen.StoreItemGrid.route}?miniResId=$id&title=$encodedName")
                         }
                     },
@@ -251,7 +248,7 @@ fun MainScreen(
                         val encodedSubCatName = URLEncoder.encode(subCategoryName, StandardCharsets.UTF_8.toString())
                         navController.navigate("${Screen.StoreItemGrid.route}?subCategoryName=$encodedSubCatName&title=$encodedSubCatName")
                     },
-                    onMiniRestaurantClick = { miniResId, miniResName -> // Add mini restaurant click handler
+                    onMiniRestaurantClick = { miniResId, miniResName ->
                         val encodedResName = URLEncoder.encode(miniResName, StandardCharsets.UTF_8.toString())
                         navController.navigate("${Screen.StoreItemGrid.route}?miniResId=$miniResId&title=$encodedResName")
                     },
@@ -382,6 +379,10 @@ fun MainScreen(
                     cartViewModel = cartViewModel,
                     onPlaceOrder = { restaurantId ->
                         navController.navigate("${Screen.Checkout.route}/$restaurantId")
+                    },
+                    // --- NEW: Handle View Cart navigation ---
+                    onViewCartClick = {
+                        navController.navigate(Screen.Cart.route)
                     }
                 )
             }
@@ -404,12 +405,11 @@ fun MainScreen(
                                 val user = Firebase.auth.currentUser ?: return@launch
                                 Firebase.firestore.collection("users").document(user.uid).get()
                                     .addOnSuccessListener { userDoc ->
-                                        // --- FIX: Add miniResName to each item when creating the order ---
                                         val orderItems = itemsForRestaurant.map { mapOf(
                                             "itemName" to it.menuItem.name,
                                             "quantity" to it.quantity,
                                             "price" to it.menuItem.price,
-                                            "miniResName" to it.restaurantName // This now correctly saves the mini restaurant name
+                                            "miniResName" to it.restaurantName
                                         )}
                                         val firstItemCategory = itemsForRestaurant.firstOrNull()?.menuItem?.category ?: ""
                                         val isPreOrder = firstItemCategory.startsWith("Pre-order")
