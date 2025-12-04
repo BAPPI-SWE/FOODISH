@@ -456,7 +456,7 @@ fun ModernAppInfoDialog(onDismiss: () -> Unit) {
 
 
                         Text(
-                            text = "Yumzy",
+                            text = "Foodish",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -567,7 +567,7 @@ fun ModernAppInfoDialog(onDismiss: () -> Unit) {
                         }
 
                         Text(
-                            text = "Thank you for choosing Yumzy! We're committed to delivering excellence.",
+                            text = "Thank you for choosing Foodish! We're committed to delivering excellence.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFF616161),
                             lineHeight = 18.sp,

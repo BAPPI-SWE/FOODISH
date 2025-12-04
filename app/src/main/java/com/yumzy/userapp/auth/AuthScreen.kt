@@ -42,7 +42,7 @@ fun AuthScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Welcome to Yumzy🍕",
+                text = "Welcome to Foodish🍕",
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
