@@ -3,16 +3,16 @@ package com.yumzy.userapp.ui.theme
 import androidx.compose.ui.graphics.Color
 
 //val BrandPink = Color(0xFFEE004B)
-val BrandPink = Color(0xFFDC0C25)
+val BrandPink = Color(0xFFC2002A)
 //val DeepPink = Color(0xFFE91E63)
-val DeepPink = Color(0xFFD50032) // Changed to a more vibrant deep pink
+val DeepPink = Color(0xFFEE063D) // Changed to a more vibrant deep pink
 val SoftPink = Color(0xFFFFEBEE)
 val White = Color(0xFFFFFFFF)
 val Black = Color(0xFF000000)
 //val DarkPink = Color(0xFFE50149)
 val softC = Color(0xFFEDEAEA) // Soft pink for cards
 
-val DarkPink = Color(0xFFB70314)
+val DarkPink = Color(0xFFC30041)
 val LightGray = Color(0xFFF5F5F5)
 val GGreen = Color(0xFF199925)
 

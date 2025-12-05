@@ -55,7 +55,7 @@ fun YLogoLoadingIndicator(
         initialValue = 0.8f,
         targetValue = 1.2f,
         animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing), // FIXED
+            animation = tween(800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "scale"
@@ -66,7 +66,7 @@ fun YLogoLoadingIndicator(
         initialValue = 0.6f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing), // FIXED
+            animation = tween(1000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "alpha"
@@ -103,7 +103,7 @@ fun YLogoLoadingIndicator(
             )
         }
 
-        // Y Logo with animations
+        // F Logo with animations
         Canvas(
             modifier = Modifier
                 .size(size)
@@ -120,18 +120,30 @@ fun YLogoLoadingIndicator(
             val centerX = canvasWidth / 2
             val centerY = canvasHeight / 2
 
-            val ySize = canvasWidth * 0.4f
+            // Perfect F proportions
+            val fHeight = canvasHeight * 0.5f
+            val fWidth = canvasWidth * 0.35f
 
-            // Draw Y shape
+            val topY = centerY - fHeight / 2
+            val bottomY = centerY + fHeight / 2
+            val middleY = centerY - fHeight * 0.1f
+
+            val leftX = centerX - fWidth / 2
+            val rightX = centerX + fWidth / 2
+            val middleRightX = centerX + fWidth * 0.3f
+
+            // Draw F shape as ONE continuous path
             val path = Path().apply {
-                moveTo(centerX - ySize / 2, centerY - ySize / 2)
-                lineTo(centerX, centerY)
+                // Start at bottom of vertical line
+                moveTo(leftX, bottomY)
+                // Draw up to top
+                lineTo(leftX, topY)
+                // Draw top horizontal bar to the right
+                lineTo(rightX, topY)
 
-                moveTo(centerX + ySize / 2, centerY - ySize / 2)
-                lineTo(centerX, centerY)
-
-                moveTo(centerX, centerY)
-                lineTo(centerX, centerY + ySize / 2)
+                // Lift pen and draw middle bar
+                moveTo(leftX, middleY)
+                lineTo(middleRightX, middleY)
             }
 
             drawPath(
