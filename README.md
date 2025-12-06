@@ -11,6 +11,10 @@ Currently serving **1,000+ active users** with daily transaction flows.
 
 ---
 
+## 📥 Download
+The app is currently live on Play Store👇
+https://play.google.com/store/apps/details?id=com.yumzy.userapp
+---
 ## 📱 The Ecosystem
 The project consists of three distinct, native Android applications that communicate synchronously via a serverless backend:
 
@@ -86,7 +90,3 @@ I am a passionate builder who bridges the gap between algorithmic efficiency and
 
 
 ---
-
-## 📥 Download
-The app is currently live for Daffodil Smart City residents.
-https://play.google.com/store/apps/details?id=com.yumzy.userapp
