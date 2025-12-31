@@ -7,7 +7,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +40,8 @@ import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.yumzy.userapp.R
 import com.yumzy.userapp.YLogoLoadingIndicator
+import com.yumzy.userapp.components.WhatsAppSupportButton
+import com.yumzy.userapp.components.isScrollingUp
 import com.yumzy.userapp.ui.theme.DeepPink
 import com.yumzy.userapp.ui.theme.softC
 import kotlinx.coroutines.launch
@@ -85,6 +89,10 @@ fun SubCategoryListScreen(
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Categories", "Shops")
     val coroutineScope = rememberCoroutineScope()
+
+    // State hoisting for scroll detection
+    val listState = rememberLazyListState()
+    val isScrollingUp = listState.isScrollingUp()
 
     LaunchedEffect(key1 = mainCategoryId) {
         isLoading = true
@@ -188,95 +196,111 @@ fun SubCategoryListScreen(
         isLoading = false
     }
 
-    Scaffold(
-        containerColor = Color.White,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = mainCategoryName,
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black,
-                        fontSize = 28.sp,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClicked) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(Color.Gray.copy(alpha = 0.05f))
-                                .border(0.5.dp, Color.Black.copy(alpha = 0.4f), CircleShape)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = Color.Black,
-                                modifier = Modifier.align(Alignment.Center).size(22.dp)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = Color.White,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = mainCategoryName,
+                            style = MaterialTheme.typography.headlineLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            fontSize = 28.sp,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBackClicked) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Gray.copy(alpha = 0.05f))
+                                    .border(0.5.dp, Color.Black.copy(alpha = 0.4f), CircleShape)
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = Color.Black,
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .size(22.dp)
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+                )
+            }
+            // Button moved to outer Box for better positioning
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                if (isLoading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        YLogoLoadingIndicator(size = 35.dp, color = DeepPink)
+                    }
+                } else if (userSubLocation.isNullOrBlank()) {
+                    NoLocationView()
+                } else {
+                    TabRow(
+                        selectedTabIndex = selectedTabIndex,
+                        containerColor = Color.White,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                                height = 3.dp,
+                                color = DeepPink
+                            )
+                        }
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTabIndex == index,
+                                onClick = { selectedTabIndex = index },
+                                text = {
+                                    Text(
+                                        text = title,
+                                        fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selectedTabIndex == index) DeepPink else Color.Gray
+                                    )
+                                }
                             )
                         }
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
-            )
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (isLoading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    YLogoLoadingIndicator(size = 35.dp, color = DeepPink)
-                }
-            } else if (userSubLocation.isNullOrBlank()) {
-                NoLocationView()
-            } else {
-                TabRow(
-                    selectedTabIndex = selectedTabIndex,
-                    containerColor = Color.White,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
-                            height = 3.dp,
-                            color = DeepPink
-                        )
-                    }
-                ) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTabIndex == index,
-                            onClick = { selectedTabIndex = index },
-                            text = {
-                                Text(
-                                    text = title,
-                                    fontWeight = if (selectedTabIndex == index) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selectedTabIndex == index) DeepPink else Color.Gray
-                                )
-                            }
-                        )
-                    }
-                }
 
-                when (selectedTabIndex) {
-                    0 -> CategoriesTabContent(
-                        announcements,
-                        subCategories,
-                        itemCounts,
-                        onSubCategoryClick
-                    )
-                    1 -> RestaurantsTabContent(
-                        announcements,
-                        miniRestaurants,
-                        onMiniRestaurantClick
-                    )
+                    when (selectedTabIndex) {
+                        0 -> CategoriesTabContent(
+                            announcements,
+                            subCategories,
+                            itemCounts,
+                            onSubCategoryClick,
+                            listState // Pass state
+                        )
+                        1 -> RestaurantsTabContent(
+                            announcements,
+                            miniRestaurants,
+                            onMiniRestaurantClick,
+                            listState // Pass state
+                        )
+                    }
                 }
             }
         }
+
+        // WhatsApp Floating Button (Root Level placement)
+        WhatsAppSupportButton(
+            isVisible = isScrollingUp,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 16.dp)
+                .zIndex(100f)
+        )
     }
 }
 
@@ -285,9 +309,11 @@ fun CategoriesTabContent(
     announcements: List<Announcement>,
     subCategories: List<SubCategory>,
     itemCounts: Map<String, Int>,
-    onSubCategoryClick: (String) -> Unit
+    onSubCategoryClick: (String) -> Unit,
+    listState: LazyListState // Receive state
 ) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)
@@ -327,9 +353,11 @@ fun CategoriesTabContent(
 fun RestaurantsTabContent(
     announcements: List<Announcement>,
     restaurants: List<MiniRestaurant>,
-    onMiniRestaurantClick: (String, String) -> Unit
+    onMiniRestaurantClick: (String, String) -> Unit,
+    listState: LazyListState // Receive state
 ) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -404,7 +432,7 @@ fun MiniRestaurantCard(restaurant: MiniRestaurant, onClick: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Background Image - FIXED: Added placeholder and error
+            // Background Image
             AsyncImage(
                 model = restaurant.imageUrl,
                 contentDescription = restaurant.name,
@@ -604,7 +632,6 @@ fun SubCategoryCard(subCategory: SubCategory, itemCount: Int, onClick: () -> Uni
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, softC)
             ) {
-                // FIXED: Added placeholder and error
                 AsyncImage(
                     model = subCategory.imageUrl,
                     contentDescription = subCategory.name,

@@ -55,6 +55,8 @@ import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.yumzy.userapp.R
 import com.yumzy.userapp.YLogoLoadingIndicator
+import com.yumzy.userapp.components.WhatsAppSupportButton
+import com.yumzy.userapp.components.isScrollingUp
 import com.yumzy.userapp.ui.theme.BrandPink
 import com.yumzy.userapp.ui.theme.DeepPink
 import com.yumzy.userapp.ui.theme.DarkPink
@@ -115,7 +117,6 @@ data class LoveBubble(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    // Updated callback to include RestaurantType
     onRestaurantClick: (restaurantId: String, restaurantName: String, type: RestaurantType) -> Unit,
     onStoreCategoryClick: (categoryId: String, categoryName: String) -> Unit,
     onSubCategorySearchClick: (subCategoryName: String) -> Unit,
@@ -130,12 +131,15 @@ fun HomeScreen(
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var showLoveBubbles by remember { mutableStateOf(false) }
+
     val lazyListState = rememberLazyListState()
+
+    // Detect scroll direction for WhatsApp button visibility
+    val isScrollingUp = lazyListState.isScrollingUp()
 
     val searchResults by remember(searchQuery, combinedRestaurants, allSubCategories, miniRestaurantsSearch) {
         derivedStateOf {
             if (searchQuery.isNotBlank()) {
-                // Filter the displayed combined restaurants
                 val restaurantResults = combinedRestaurants.filter { restaurant ->
                     restaurant.name.contains(searchQuery, ignoreCase = true) ||
                             restaurant.cuisine.contains(searchQuery, ignoreCase = true)
@@ -145,12 +149,10 @@ fun HomeScreen(
                     subCategory.name.contains(searchQuery, ignoreCase = true)
                 }.map { SearchResult.SubCategoryResult(it) }
 
-                // Filter the dedicated search mini restaurant list
                 val miniRestaurantResults = miniRestaurantsSearch.filter { miniRestaurant ->
                     miniRestaurant.name.contains(searchQuery, ignoreCase = true)
                 }.map { SearchResult.MiniRestaurantResult(it) }
 
-                // Combine results
                 (restaurantResults + subCategoryResults + miniRestaurantResults).distinctBy {
                     when(it) {
                         is SearchResult.RestaurantResult -> "RES_${it.restaurant.id}"
@@ -250,7 +252,6 @@ fun HomeScreen(
                     }
                 }
 
-            // --- COMBINED FETCHING LOGIC START ---
             try {
                 // 1. Fetch Main Restaurants (Old)
                 val mainResSnapshot = db.collection("restaurants")
@@ -263,7 +264,7 @@ fun HomeScreen(
                         name = doc.getString("name") ?: "No Name",
                         cuisine = doc.getString("cuisine") ?: "General",
                         imageUrl = doc.getString("imageUrl"),
-                        open = "yes", // Main restaurants assumed open or logic can be added
+                        open = "yes",
                         type = RestaurantType.MAIN,
                         priority = doc.getLong("priority")?.toInt()
                     )
@@ -286,8 +287,6 @@ fun HomeScreen(
                     )
                 }
 
-                // 3. Combine and Sort by Priority
-                // Items with a priority number come first (ascending order: 1, 2, 3), nulls come last
                 val combined = (mainRestaurants + miniRestaurants).sortedWith(
                     compareBy<Restaurant> { it.priority ?: Int.MAX_VALUE }
                         .thenBy { it.name }
@@ -300,7 +299,6 @@ fun HomeScreen(
                 isLoading = false
                 combinedRestaurants = emptyList()
             }
-            // --- COMBINED FETCHING LOGIC END ---
 
         } else if (userProfile != null) {
             isLoading = false
@@ -473,6 +471,16 @@ fun HomeScreen(
                 onAnimationComplete = { showLoveBubbles = false }
             )
         }
+
+        // WhatsApp Floating Button - FIXED PLACEMENT
+        // Using padding(bottom = 100.dp) to stay clear of Bottom Navigation
+        WhatsAppSupportButton(
+            isVisible = isScrollingUp,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 100.dp)
+                .zIndex(100f)
+        )
     }
 }
 
@@ -482,16 +490,16 @@ fun LoveBubblesAnimation(onAnimationComplete: () -> Unit) {
         List(25) { index ->
             LoveBubble(
                 id = index,
-                startX = Random.nextFloat(), // Random position across full screen width (0 to 1)
-                scale = Random.nextFloat() * 0.7f + 0.6f, // Random size between 0.6 and 1.3
-                duration = Random.nextInt(1500, 2500), // Random duration
-                delay = Random.nextInt(0, 500) // Random delay
+                startX = Random.nextFloat(),
+                scale = Random.nextFloat() * 0.7f + 0.6f,
+                duration = Random.nextInt(1500, 2500),
+                delay = Random.nextInt(0, 500)
             )
         }
     }
 
     LaunchedEffect(Unit) {
-        delay(3000) // Total animation time
+        delay(3000)
         onAnimationComplete()
     }
 
@@ -555,17 +563,15 @@ fun AnimatedLoveBubble(bubble: LoveBubble) {
         label = "scale_${bubble.id}"
     )
 
-    // Position bubbles across the full screen width
     Box(
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = Modifier.fillMaxSize()
     ) {
         Box(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
                 .offset(
-                    x = (bubble.startX * 350).dp, // Spread across screen width
+                    x = (bubble.startX * 350).dp,
                     y = 0.dp
                 )
                 .graphicsLayer {
@@ -580,11 +586,11 @@ fun AnimatedLoveBubble(bubble: LoveBubble) {
                 imageVector = Icons.Default.Favorite,
                 contentDescription = "Love",
                 tint = when (bubble.id % 5) {
-                    0 -> Color(0xFFFF1744) // Deep red
-                    1 -> Color(0xFFFF4081) // Pink
-                    2 -> Color(0xFFF50057) // Bright pink
-                    3 -> Color(0xFFE91E63) // Material pink
-                    else -> Color(0xFFEC407A) // Light pink
+                    0 -> Color(0xFFFF1744)
+                    1 -> Color(0xFFFF4081)
+                    2 -> Color(0xFFF50057)
+                    3 -> Color(0xFFE91E63)
+                    else -> Color(0xFFEC407A)
                 },
                 modifier = Modifier.size((32 * bubble.scale).dp)
             )
@@ -626,10 +632,7 @@ fun HomeTopBar(
     onNotificationClick: () -> Unit,
     onFavoriteClick: () -> Unit
 ) {
-    val gradientColors = listOf(
-        BrandPink,
-        DarkPink
-    )
+    val gradientColors = listOf(BrandPink, DarkPink)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -679,7 +682,6 @@ fun HomeTopBar(
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp
                             )
-
                             if (!userProfile?.subLocation.isNullOrBlank()) {
                                 Text(
                                     text = userProfile?.subLocation ?: "",
@@ -712,28 +714,19 @@ fun HomeTopBar(
                         }
                     }
                 }
-
                 Spacer(modifier = Modifier.height(if (isScrolled) 8.dp else 12.dp))
-
-                ModernSearchBar(
-                    query = searchQuery,
-                    onQueryChange = onSearchQueryChange
-                )
+                ModernSearchBar(query = searchQuery, onQueryChange = onSearchQueryChange)
             }
         }
     }
 }
 
 @Composable
-fun ModernSearchBar(
-    query: String,
-    onQueryChange: (String) -> Unit
-) {
+fun ModernSearchBar(query: String, onQueryChange: (String) -> Unit) {
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     var isFocused by remember { mutableStateOf(false) }
 
-    // Responsive dimensions
     val searchBarHeight = 31.dp
     val iconSize = 20.dp
     val horizontalPadding = 16.dp
@@ -769,9 +762,7 @@ fun ModernSearchBar(
                 tint = if (isFocused) BrandPink else Color.Gray,
                 modifier = Modifier.size(iconSize)
             )
-
             Spacer(modifier = Modifier.width(12.dp))
-
             BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
@@ -787,9 +778,7 @@ fun ModernSearchBar(
                 singleLine = true,
                 cursorBrush = SolidColor(BrandPink),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(
-                    onSearch = { focusManager.clearFocus() }
-                ),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                 decorationBox = { innerTextField ->
                     Box(
                         modifier = Modifier.fillMaxWidth(),
@@ -808,7 +797,6 @@ fun ModernSearchBar(
                     }
                 }
             )
-
             if (query.isNotEmpty()) {
                 IconButton(
                     onClick = { onQueryChange("") },
@@ -958,7 +946,6 @@ fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifi
                         error = painterResource(id = R.drawable.ic_shopping_bag)
                     )
 
-                    // CLOSED OVERLAY
                     if (isClosed) {
                         Box(
                             modifier = Modifier
@@ -1035,9 +1022,7 @@ fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifi
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-
                     Spacer(modifier = Modifier.height(1.dp))
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
@@ -1057,9 +1042,7 @@ fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifi
                             modifier = Modifier.weight(1f)
                         )
                     }
-
                     Spacer(modifier = Modifier.height(4.dp))
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1080,7 +1063,6 @@ fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifi
                                 color = Color(0xFF2C2C2C)
                             )
                         }
-
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Default.AccessTime,
@@ -1099,7 +1081,6 @@ fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifi
                     }
                 }
             }
-
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1122,7 +1103,6 @@ fun SubCategorySearchCard(
             .height(80.dp)
             .padding(start = 30.dp, end = 16.dp)
     ) {
-        // Main card
         Card(
             modifier = Modifier
                 .fillMaxSize()
@@ -1156,8 +1136,6 @@ fun SubCategorySearchCard(
                 }
             }
         }
-
-        // Floating image on the left
         Box(
             modifier = Modifier
                 .size(60.dp)
@@ -1187,8 +1165,6 @@ fun SubCategorySearchCard(
                 )
             }
         }
-
-        // Floating arrow on the right
         Box(
             modifier = Modifier
                 .size(40.dp)
@@ -1220,7 +1196,6 @@ fun SubCategorySearchCard(
     }
 }
 
-// Add MiniRestaurantSearchCard composable (same as in SubCategoryListScreen)
 @Composable
 fun MiniRestaurantSearchCard(restaurant: MiniRestaurant, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val isClosed = restaurant.open.equals("no", ignoreCase = true)
@@ -1235,7 +1210,6 @@ fun MiniRestaurantSearchCard(restaurant: MiniRestaurant, onClick: () -> Unit, mo
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Background Image
             AsyncImage(
                 model = restaurant.imageUrl,
                 contentDescription = restaurant.name,
@@ -1244,8 +1218,6 @@ fun MiniRestaurantSearchCard(restaurant: MiniRestaurant, onClick: () -> Unit, mo
                     .fillMaxSize()
                     .clip(RoundedCornerShape(20.dp))
             )
-
-            // Gradient Overlay
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1260,8 +1232,6 @@ fun MiniRestaurantSearchCard(restaurant: MiniRestaurant, onClick: () -> Unit, mo
                         )
                     )
             )
-
-            // Closed Overlay
             if (isClosed) {
                 Box(
                     modifier = Modifier
@@ -1296,8 +1266,6 @@ fun MiniRestaurantSearchCard(restaurant: MiniRestaurant, onClick: () -> Unit, mo
                     }
                 }
             }
-
-            // Restaurant Name at Bottom
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1312,8 +1280,6 @@ fun MiniRestaurantSearchCard(restaurant: MiniRestaurant, onClick: () -> Unit, mo
                     fontSize = 20.sp
                 )
             }
-
-            // Open Badge (top right)
             if (!isClosed) {
                 Surface(
                     shape = RoundedCornerShape(bottomStart = 12.dp, topEnd = 20.dp),

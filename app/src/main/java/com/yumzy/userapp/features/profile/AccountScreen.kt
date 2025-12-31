@@ -508,7 +508,7 @@ fun ModernAppInfoDialog(onDismiss: () -> Unit) {
                         iconColor = Color(0xFF4CAF50),
                         title = "Helpline",
                         items = listOf(
-                            ClickableItem("+880 1590093644", Icons.Default.Chat, "https://wa.me/8801590093644")
+                            ClickableItem("+880 1746324620", Icons.Default.Chat, "https://wa.me/8801746324620")
                         )
                     )
 
