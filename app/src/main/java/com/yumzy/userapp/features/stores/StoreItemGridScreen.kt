@@ -1321,7 +1321,7 @@ fun BottomBarWithTwoButtons(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "Place Order ($totalItems)",
+                        "Continue ($totalItems)",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )

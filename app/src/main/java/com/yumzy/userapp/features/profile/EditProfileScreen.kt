@@ -226,20 +226,20 @@ fun EditProfileScreen(
                     shape = RoundedCornerShape(12.dp)
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    OutlinedTextField(
-                        value = floor,
-                        onValueChange = { floor = it },
-                        label = { Text("Floor No.") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    OutlinedTextField(
-                        value = room,
-                        onValueChange = { room = it },
-                        label = { Text("Room No.") },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+//                    OutlinedTextField(
+//                        value = floor,
+//                        onValueChange = { floor = it },
+//                        label = { Text("Floor No.") },
+//                        modifier = Modifier.weight(1f),
+//                        shape = RoundedCornerShape(12.dp)
+//                    )
+//                    OutlinedTextField(
+//                        value = room,
+//                        onValueChange = { room = it },
+//                        label = { Text("Room No.") },
+//                        modifier = Modifier.weight(1f),
+//                        shape = RoundedCornerShape(12.dp)
+//                    )
                 }
 
                 Spacer(Modifier.height(16.dp))
