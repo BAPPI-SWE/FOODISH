@@ -387,6 +387,8 @@ fun MainScreen(
                 )
             }
 
+            // In MainScreen.kt, update the CheckoutScreen composable call:
+
             composable(
                 route = "${Screen.Checkout.route}/{restaurantId}",
                 arguments = listOf(navArgument("restaurantId") { type = NavType.StringType })
@@ -400,7 +402,7 @@ fun MainScreen(
                         cartItems = itemsForRestaurant,
                         restaurantId = restaurantId,
                         onBackClicked = { navController.popBackStack() },
-                        onConfirmOrder = { delivery, service, total ->
+                        onConfirmOrder = { delivery, service, total, paymentMethod ->
                             scope.launch {
                                 val user = Firebase.auth.currentUser ?: return@launch
                                 Firebase.firestore.collection("users").document(user.uid).get()
@@ -433,7 +435,8 @@ fun MainScreen(
                                             "orderStatus" to "Pending",
                                             "createdAt" to Timestamp.now(),
                                             "orderType" to orderType,
-                                            "preOrderCategory" to if (orderType == "PreOrder") firstItemCategory else ""
+                                            "preOrderCategory" to if (orderType == "PreOrder") firstItemCategory else "",
+                                            "payment" to paymentMethod  // NEW: Add payment method field
                                         )
 
                                         Firebase.firestore.collection("orders").add(newOrder)

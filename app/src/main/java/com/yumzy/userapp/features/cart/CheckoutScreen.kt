@@ -5,9 +5,13 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.util.Log
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -15,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,24 +30,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
+import com.yumzy.userapp.R
 import com.yumzy.userapp.ads.SharedInterstitialAdManager
 import com.yumzy.userapp.ui.theme.DarkPink
 import kotlinx.coroutines.delay
 import kotlin.random.Random
-
-// Add this import at the top of your file if not already present
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.Spring
-import androidx.compose.foundation.layout.Arrangement
 
 data class UserProfileDetails(
     val name: String = "...",
@@ -51,7 +56,6 @@ data class UserProfileDetails(
     val subLocation: String = ""
 )
 
-// Celebration confetti data class
 data class ConfettiParticle(
     val id: Int,
     val startX: Float,
@@ -68,12 +72,21 @@ enum class ParticleShape {
     STAR, CIRCLE, SQUARE
 }
 
+data class PaymentMethod(
+    val type: PaymentType,
+    val details: String = ""
+)
+
+enum class PaymentType {
+    COD, BKASH, NAGAD, ROCKET
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CheckoutScreen(
     cartItems: List<CartItem>,
     restaurantId: String? = null,
-    onConfirmOrder: (deliveryCharge: Double, serviceCharge: Double, finalTotal: Double) -> Unit,
+    onConfirmOrder: (deliveryCharge: Double, serviceCharge: Double, finalTotal: Double, paymentMethod: String) -> Unit,
     onBackClicked: () -> Unit
 ) {
     val itemsSubtotal = cartItems.sumOf { it.menuItem.price * it.quantity }
@@ -87,15 +100,19 @@ fun CheckoutScreen(
     var showCelebration by remember { mutableStateOf(false) }
     var isPlacingOrder by remember { mutableStateOf(false) }
 
+    // Payment method states
+    var selectedPaymentMethod by remember { mutableStateOf(PaymentMethod(PaymentType.COD)) }
+    var showPaymentMethodDialog by remember { mutableStateOf(false) }
+    var showDigitalPaymentDialog by remember { mutableStateOf(false) }
+    var selectedDigitalPayment by remember { mutableStateOf<PaymentType?>(null) }
+
     val context = LocalContext.current
 
-    // Pre-load the ad when screen is first composed - it will load in background
     LaunchedEffect(Unit) {
         SharedInterstitialAdManager.loadAd(context)
         Log.d("CheckoutScreen", "Started pre-loading ad in background")
     }
 
-    // Fetch user profile from Firestore
     LaunchedEffect(Unit) {
         val currentUser = Firebase.auth.currentUser
         if (currentUser != null) {
@@ -122,13 +139,11 @@ fun CheckoutScreen(
         }
     }
 
-    // Calculate dynamic charges based on user location and store type + additional charges from items
     LaunchedEffect(userProfile) {
         if (userProfile != null && userProfile!!.baseLocation.isNotEmpty() && userProfile!!.subLocation.isNotEmpty()) {
             isLoadingCharges = true
             val db = Firebase.firestore
 
-            // First, get base charges from location
             db.collection("locations")
                 .whereEqualTo("name", userProfile!!.baseLocation)
                 .get()
@@ -155,7 +170,6 @@ fun CheckoutScreen(
                         }
                     }
 
-                    // Now check for additional charges from store items
                     if (restaurantId == "yumzy_store") {
                         val baseItemIds = cartItems.map {
                             val itemId = it.menuItem.id
@@ -211,6 +225,29 @@ fun CheckoutScreen(
         }
     }
 
+    fun handlePaymentSelection(paymentType: PaymentType) {
+        when (paymentType) {
+            PaymentType.COD -> {
+                selectedPaymentMethod = PaymentMethod(PaymentType.COD)
+                showPaymentMethodDialog = false
+            }
+            else -> {
+                selectedDigitalPayment = paymentType
+                showPaymentMethodDialog = false
+                showDigitalPaymentDialog = true
+            }
+        }
+    }
+
+    fun getPaymentDisplayText(): String {
+        return when (selectedPaymentMethod.type) {
+            PaymentType.COD -> "Cash on Delivery"
+            PaymentType.BKASH -> "Bkash - ${selectedPaymentMethod.details}"
+            PaymentType.NAGAD -> "Nagad - ${selectedPaymentMethod.details}"
+            PaymentType.ROCKET -> "Rocket - ${selectedPaymentMethod.details}"
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
@@ -237,16 +274,22 @@ fun CheckoutScreen(
                     )
                 )
             },
-            // --- NEW: Added bottom bar for the confirm button ---
             bottomBar = {
                 CheckoutBottomBar(
                     totalAmount = finalTotal,
                     isLoading = isLoadingCharges,
                     isPlacingOrder = isPlacingOrder,
                     onConfirmClick = {
+                        val paymentString = when (selectedPaymentMethod.type) {
+                            PaymentType.COD -> "COD"
+                            PaymentType.BKASH -> "Bkash,01970102586,${selectedPaymentMethod.details}"
+                            PaymentType.NAGAD -> "Nagad,01988143409,${selectedPaymentMethod.details}"
+                            PaymentType.ROCKET -> "Rocket,017463246207,${selectedPaymentMethod.details}"
+                        }
+
                         showCelebration = true
                         isPlacingOrder = true
-                        onConfirmOrder(deliveryCharge, serviceCharge, finalTotal)
+                        onConfirmOrder(deliveryCharge, serviceCharge, finalTotal, paymentString)
                     }
                 )
             }
@@ -257,7 +300,6 @@ fun CheckoutScreen(
                     .padding(paddingValues)
                     .background(Color(0xFFF8F9FA))
                     .verticalScroll(rememberScrollState())
-                    // Add padding at the bottom to ensure content doesn't hide behind the bar
                     .padding(bottom = 80.dp)
             ) {
                 // Delivery Address Section
@@ -353,6 +395,7 @@ fun CheckoutScreen(
 
                 Spacer(Modifier.height(20.dp))
 
+
                 // Price Details Section
                 SectionHeader(title = "Price Details")
                 ModernCard(
@@ -394,8 +437,122 @@ fun CheckoutScreen(
                         }
                     }
                 }
-                // --- The old button was here and has been removed ---
+                Spacer(Modifier.height(20.dp))
+                // Payment Method Section
+                SectionHeader(title = "Payment Method")
+                ModernCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Cash on Delivery option
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { handlePaymentSelection(PaymentType.COD) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedPaymentMethod.type == PaymentType.COD,
+                                onClick = { handlePaymentSelection(PaymentType.COD) }
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    "Cash on Delivery",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF333333)
+                                    )
+                                )
+                                Text(
+                                    "Pay when you receive your order",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = Color(0xFF666666)
+                                    )
+                                )
+                            }
+                        }
+
+                        // Other payment methods option
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showPaymentMethodDialog = true }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedPaymentMethod.type != PaymentType.COD,
+                                onClick = { showPaymentMethodDialog = true }
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    "Other Payment Method",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF333333)
+                                    )
+                                )
+                                Text(
+                                    "Bkash, Nagad, Rocket",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = Color(0xFF666666)
+                                    )
+                                )
+                            }
+                        }
+
+                        // Show selected digital payment details
+                        if (selectedPaymentMethod.type != PaymentType.COD) {
+                            Text(
+                                getPaymentDisplayText(),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = DarkPink,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                modifier = Modifier.padding(start = 48.dp, top = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
             }
+        }
+
+        // Payment Method Selection Dialog
+        if (showPaymentMethodDialog) {
+            PaymentMethodSelectionDialog(
+                onDismiss = { showPaymentMethodDialog = false },
+                onPaymentSelected = { paymentType -> handlePaymentSelection(paymentType) }
+            )
+        }
+
+        // Digital Payment Dialog
+        if (showDigitalPaymentDialog && selectedDigitalPayment != null) {
+            DigitalPaymentDialog(
+                paymentType = selectedDigitalPayment!!,
+                onDismiss = {
+                    showDigitalPaymentDialog = false
+                    selectedDigitalPayment = null
+                },
+                onConfirm = { mobile, transaction ->
+                    selectedPaymentMethod = PaymentMethod(
+                        type = selectedDigitalPayment!!,
+                        details = transaction
+                    )
+                    showDigitalPaymentDialog = false
+                    selectedDigitalPayment = null
+                }
+            )
         }
 
         // Celebration Animation Overlay
@@ -410,7 +567,366 @@ fun CheckoutScreen(
     }
 }
 
-// --- NEW Composable for the Bottom Bar ---
+@Composable
+fun PaymentMethodSelectionDialog(
+    onDismiss: () -> Unit,
+    onPaymentSelected: (PaymentType) -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = true
+        )
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp)
+            ) {
+                Text(
+                    "Select Payment Method",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    modifier = Modifier.padding(bottom = 20.dp)
+                )
+
+                // Bkash option - use R.drawable.bkash
+                PaymentOptionCard(
+                    title = "Bkash",
+                    iconRes = R.drawable.bkash, // Your bkash.jpg/png
+                    onClick = { onPaymentSelected(PaymentType.BKASH) }
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Nagad option - use R.drawable.nagad
+                PaymentOptionCard(
+                    title = "Nagad",
+                    iconRes = R.drawable.nagad, // Your nagad.jpg/png
+                    onClick = { onPaymentSelected(PaymentType.NAGAD) }
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Rocket option - use R.drawable.rocket
+                PaymentOptionCard(
+                    title = "Rocket",
+                    iconRes = R.drawable.rocket, // Your rocket.jpg/png
+                    onClick = { onPaymentSelected(PaymentType.ROCKET) }
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFF5F5F5),
+                        contentColor = Color(0xFF666666)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
+@Composable
+fun DigitalPaymentDialog(
+    paymentType: PaymentType,
+    onDismiss: () -> Unit,
+    onConfirm: (mobile: String, transaction: String) -> Unit
+) {
+    var showForm by remember { mutableStateOf(false) }
+    var mobileNumber by remember { mutableStateOf("") }
+    var transactionId by remember { mutableStateOf("") }
+    var animationComplete by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        delay(300)
+        animationComplete = true
+        delay(500)
+        showForm = true
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            AnimatedVisibility(
+                visible = !showForm && animationComplete,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                PaymentCardSelection(paymentType = paymentType)
+            }
+
+            AnimatedVisibility(
+                visible = showForm,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut()
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Text(
+                        "Send Money to ${getPaymentNumberForDisplay(paymentType)}",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    Text(
+                        "Send money to ${getPaymentNumber(paymentType)} and enter your details below:",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = Color(0xFF666666)
+                        ),
+                        modifier = Modifier.padding(bottom = 20.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = mobileNumber,
+                        onValueChange = { mobileNumber = it },
+                        label = { Text("Mobile Number") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = DarkPink,
+                            focusedLabelColor = DarkPink
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = transactionId,
+                        onValueChange = { transactionId = it },
+                        label = { Text("Transaction ID") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = DarkPink,
+                            focusedLabelColor = DarkPink
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFF5F5F5),
+                                contentColor = Color(0xFF666666)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Cancel")
+                        }
+
+                        Button(
+                            onClick = {
+                                if (mobileNumber.isNotBlank() && transactionId.isNotBlank()) {
+                                    onConfirm(mobileNumber, transactionId)
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            enabled = mobileNumber.isNotBlank() && transactionId.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = DarkPink,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Confirm")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PaymentCardSelection(paymentType: PaymentType) {
+    val iconRes = when (paymentType) {
+        PaymentType.BKASH -> R.drawable.bkash
+        PaymentType.NAGAD -> R.drawable.nagad
+        PaymentType.ROCKET -> R.drawable.rocket
+        else -> null
+    }
+
+    Column(
+        modifier = Modifier.padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Animated card icon
+        var rotation by remember { mutableStateOf(0f) }
+        var scale by remember { mutableStateOf(0.8f) }
+
+        LaunchedEffect(Unit) {
+            rotation = 360f
+            scale = 1f
+        }
+
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .background(
+                    color = when (paymentType) {
+                        PaymentType.BKASH -> Color(0xFFE2136E)
+                        PaymentType.NAGAD -> Color(0xFFF15A29)
+                        PaymentType.ROCKET -> Color(0xFF00AEEF)
+                        else -> DarkPink
+                    },
+                    shape = RoundedCornerShape(16.dp)
+                )
+                .graphicsLayer {
+                    rotationZ = rotation
+                    scaleX = scale
+                    scaleY = scale
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            if (iconRes != null) {
+                Image(
+                    painter = painterResource(id = iconRes),
+                    contentDescription = paymentType.name,
+                    modifier = Modifier.size(60.dp),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                Text(
+                    when (paymentType) {
+                        PaymentType.BKASH -> "Bkash"
+                        PaymentType.NAGAD -> "Nagad"
+                        PaymentType.ROCKET -> "Rocket"
+                        else -> ""
+                    },
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            "Processing ${when (paymentType) {
+                PaymentType.BKASH -> "Bkash"
+                PaymentType.NAGAD -> "Nagad"
+                PaymentType.ROCKET -> "Rocket"
+                else -> ""
+            }} Payment",
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Bold
+            )
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            "Please wait...",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = Color(0xFF666666)
+            )
+        )
+    }
+}
+fun getPaymentNumber(paymentType: PaymentType): String {
+    return when (paymentType) {
+        PaymentType.BKASH -> "01970102586"
+        PaymentType.NAGAD -> "01988143409"
+        PaymentType.ROCKET -> "017463246207"
+        else -> ""
+    }
+}
+
+fun getPaymentNumberForDisplay(paymentType: PaymentType): String {
+    return when (paymentType) {
+        PaymentType.BKASH -> "Bkash: 01970102586"
+        PaymentType.NAGAD -> "Nagad: 01988143409"
+        PaymentType.ROCKET -> "Rocket: 017463246207"
+        else -> ""
+    }
+}
+
+@Composable
+fun PaymentOptionCard(
+    title: String,
+    iconRes: Int,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFF8F9FA)
+        ),
+        border = BorderStroke(1.dp, Color(0xFFE0E0E0))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Use the image resource directly
+            Image(
+                painter = painterResource(id = iconRes),
+                contentDescription = title,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Fit
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                Icons.Default.ArrowForward,
+                contentDescription = "Select",
+                tint = Color(0xFF666666)
+            )
+        }
+    }
+}
+
 @Composable
 fun CheckoutBottomBar(
     totalAmount: Double,
@@ -475,17 +991,11 @@ fun CheckoutBottomBar(
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-//                    Text(
-//                        "৳${"%.2f".format(totalAmount)}",
-//                        fontSize = 16.sp,
-//                        fontWeight = FontWeight.Bold
-//                    )
                 }
             }
         }
     }
 }
-
 
 @Composable
 fun SectionHeader(title: String) {
@@ -533,12 +1043,12 @@ fun CelebrationAnimation(onAnimationComplete: () -> Unit) {
                 duration = Random.nextInt(1800, 2800),
                 delay = Random.nextInt(0, 400),
                 color = when (Random.nextInt(6)) {
-                    0 -> Color(0xFFFFD700) // Gold
-                    1 -> Color(0xFFFF6B6B) // Red
-                    2 -> Color(0xFF4ECDC4) // Teal
-                    3 -> Color(0xFFFFE66D) // Yellow
-                    4 -> Color(0xFF95E1D3) // Mint
-                    else -> Color(0xFFF38181) // Pink
+                    0 -> Color(0xFFFFD700)
+                    1 -> Color(0xFFFF6B6B)
+                    2 -> Color(0xFF4ECDC4)
+                    3 -> Color(0xFFFFE66D)
+                    4 -> Color(0xFF95E1D3)
+                    else -> Color(0xFFF38181)
                 },
                 shape = when (Random.nextInt(3)) {
                     0 -> ParticleShape.STAR
@@ -694,7 +1204,6 @@ fun PriceRow(label: String, amount: Double, isTotal: Boolean = false) {
 fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
     var startAnimation by remember { mutableStateOf(false) }
 
-    // Trigger animation start
     LaunchedEffect(Unit) {
         delay(200)
         startAnimation = true
@@ -702,7 +1211,6 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
         onAnimationComplete()
     }
 
-    // Checkmark scale animation
     val checkScale by animateFloatAsState(
         targetValue = if (startAnimation) 1f else 0f,
         animationSpec = spring(
@@ -712,7 +1220,6 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
         label = "checkScale"
     )
 
-    // Circle scale animation
     val circleScale by animateFloatAsState(
         targetValue = if (startAnimation) 1f else 0.3f,
         animationSpec = spring(
@@ -722,7 +1229,6 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
         label = "circleScale"
     )
 
-    // Ripple effect
     val rippleScale by animateFloatAsState(
         targetValue = if (startAnimation) 2.5f else 0.8f,
         animationSpec = tween(1200, easing = FastOutSlowInEasing),
@@ -735,7 +1241,6 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
         label = "rippleAlpha"
     )
 
-    // Text animations
     val textAlpha by animateFloatAsState(
         targetValue = if (startAnimation) 1f else 0f,
         animationSpec = tween(600, delayMillis = 400, easing = FastOutSlowInEasing),
@@ -759,12 +1264,10 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Animated container with ripple effect
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(200.dp)
             ) {
-                // Ripple effect
                 Box(
                     modifier = Modifier
                         .size(120.dp)
@@ -779,7 +1282,6 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
                         )
                 )
 
-                // Main circle background
                 Box(
                     modifier = Modifier
                         .size(120.dp)
@@ -794,7 +1296,6 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
                         .border(4.dp, Color.White.copy(alpha = 0.3f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Checkmark icon
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Order Sent",
@@ -811,7 +1312,6 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // "Order Sent!" text
             Text(
                 text = "Order Sent!",
                 style = MaterialTheme.typography.headlineMedium.copy(
@@ -828,7 +1328,6 @@ fun OrderSentAnimation(onAnimationComplete: () -> Unit) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Subtitle text
             Text(
                 text = "Your order has been confirmed",
                 style = MaterialTheme.typography.bodyLarge,
