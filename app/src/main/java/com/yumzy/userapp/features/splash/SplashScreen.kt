@@ -28,7 +28,7 @@ fun SplashScreen(onAnimationFinish: () -> Unit) {
 
     LaunchedEffect(progress) {
         if (progress == 1f) {
-            delay(200)
+            delay(10)
             onAnimationFinish()
         }
     }
