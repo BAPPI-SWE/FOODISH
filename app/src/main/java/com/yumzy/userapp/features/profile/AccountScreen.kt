@@ -131,7 +131,7 @@ fun AccountScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Info,
-                                contentDescription = "App Info",
+                                contentDescription = "App Info Icon",
                                 tint = Color.White.copy(alpha = 0.9f),
                                 modifier = Modifier.size(22.dp)
                             )
