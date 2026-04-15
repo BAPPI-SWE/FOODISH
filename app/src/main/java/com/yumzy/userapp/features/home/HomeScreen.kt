@@ -853,10 +853,10 @@ fun OfferSlider(offers: List<Offer>) {
 @Composable
 fun CategorySection(modifier: Modifier = Modifier, onCategoryClick: (categoryId: String, categoryName: String) -> Unit) {
     val categories = listOf(
-        Category("Fast Food", Icons.Default.Fastfood, "fast_food"),
-        Category("Pharmacy", Icons.Default.LocalPharmacy, "pharmacy"),
-        Category("City Food", Icons.Default.FoodBank, "personal_care"),
-        Category("Grocery", Icons.Default.ShoppingCart, "grocery")
+        Category("Fast\nFood", Icons.Default.Fastfood, "fast_food"),
+        Category("Hotel's\n Food", Icons.Default.Dining, "pharmacy"),
+        Category(" City\nFood", Icons.Default.FoodBank, "personal_care"),
+        Category("Grocery &\nMedicine", Icons.Default.ShoppingCart, "grocery")
     )
     Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
         categories.forEach { category ->
