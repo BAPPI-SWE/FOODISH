@@ -2,7 +2,13 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
-    id("com.google.devtools.ksp") version "1.9.10-1.0.13"// Add this for Room
+    id("com.google.devtools.ksp") version "2.2.20-2.0.4"// Add this for Room
+
+
+
+
+    id("org.jetbrains.kotlin.plugin.compose")  // ← add
+
 }
 
 android {
@@ -32,18 +38,16 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.11"
-    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -93,7 +97,7 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging-ktx")
 
     // Room Database
-    val room_version = "2.6.1"
+    val room_version = "2.7.1"
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     ksp("androidx.room:room-compiler:$room_version")
