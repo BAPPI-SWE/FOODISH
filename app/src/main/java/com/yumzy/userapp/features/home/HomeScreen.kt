@@ -872,7 +872,7 @@ fun CategorySection(
     val categories = listOf(
         CategoryDef("Fast Food",  "fast_food",     "🍔", Color(0xFFFFE4E8), Color(0xFFE91E63)),
         CategoryDef("Rice & Curry",   "pharmacy",      "🍛", Color(0xFFFFE4E8), Color(0xFFE91E63)),
-        CategoryDef("City Food",  "personal_care", "", Color(0xFFFFE4E8), Color(0xFFE91E63)),
+        CategoryDef("City Food",  "personal_care", "🍕", Color(0xFFFFE4E8), Color(0xFFE91E63)),
         CategoryDef("Grocery",    "grocery",       "🛒", Color(0xFFFFE4E8), Color(0xFFE91E63)),
     )
 

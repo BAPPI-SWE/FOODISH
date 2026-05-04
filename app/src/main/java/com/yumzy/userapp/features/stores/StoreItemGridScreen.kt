@@ -802,6 +802,25 @@ fun MultiVariantDialog(
                             }
                         }
                     }
+                    // Bottom button
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (hasSelection) Color(0xFF4CAF50) else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (hasSelection) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = if (hasSelection) "Done" else "Close",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
@@ -947,6 +966,25 @@ fun StoreItemDetailDialog(
                             onIncrement = { cartViewModel.incrementSelection(genericMenuItem) },
                             onDecrement = { cartViewModel.decrementSelection(genericMenuItem) },
                             enabled = item.isShopOpen && item.stock == "yes"
+                        )
+                    }
+                    // Bottom button
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (hasSelection) Color(0xFF4CAF50) else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (hasSelection) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = if (hasSelection) "Done" else "Close",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
