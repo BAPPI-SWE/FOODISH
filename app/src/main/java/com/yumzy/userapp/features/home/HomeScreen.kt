@@ -65,6 +65,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlin.random.Random
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+
+
+
 // --- Data classes for Screen ---
 data class Offer(
     val imageUrl: String = "",
@@ -850,32 +855,66 @@ fun OfferSlider(offers: List<Offer>) {
     }
 }
 
+
 @Composable
-fun CategorySection(modifier: Modifier = Modifier, onCategoryClick: (categoryId: String, categoryName: String) -> Unit) {
-    val categories = listOf(
-        Category("Fast\nFood", Icons.Default.Fastfood, "fast_food"),
-        Category("Hotel's\n Food", Icons.Default.Dining, "pharmacy"),
-        Category(" City\nFood", Icons.Default.FoodBank, "personal_care"),
-        Category("Grocery &\nMedicine", Icons.Default.ShoppingCart, "grocery")
+fun CategorySection(
+    modifier: Modifier = Modifier,
+    onCategoryClick: (categoryId: String, categoryName: String) -> Unit
+) {
+    data class CategoryDef(
+        val name: String,
+        val id: String,
+        val emoji: String,
+        val bgColor: Color,
+        val accentColor: Color
     )
-    Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+
+    val categories = listOf(
+        CategoryDef("Fast Food",  "fast_food",     "🍔", Color(0xFFFFE4E8), Color(0xFFE91E63)),
+        CategoryDef("Rice & Curry",   "pharmacy",      "🍛", Color(0xFFFFE4E8), Color(0xFFE91E63)),
+        CategoryDef("City Food",  "personal_care", "", Color(0xFFFFE4E8), Color(0xFFE91E63)),
+        CategoryDef("Grocery",    "grocery",       "🛒", Color(0xFFFFE4E8), Color(0xFFE91E63)),
+    )
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
         categories.forEach { category ->
-            CategoryItem(category = category, onClick = { onCategoryClick(category.id, category.name) })
+            ModernCategoryItem(
+                name = category.name,
+                id = category.id,
+                emoji = category.emoji,
+                bgColor = category.bgColor,
+                accentColor = category.accentColor,
+                onClick = { onCategoryClick(category.id, category.name) }
+            )
         }
     }
 }
 
+
+
+
+// ─── Replace ModernCategoryItem ────────────────────────────────────────────
 @Composable
-fun CategoryItem(category: Category, onClick: () -> Unit) {
-    val scale by if (category.id == "personal_care") {
-        rememberInfiniteTransition(label = "").animateFloat(
+fun ModernCategoryItem(
+    name: String,
+    id: String,
+    emoji: String,
+    bgColor: Color,
+    accentColor: Color,
+    onClick: () -> Unit
+) {
+    val scale by if (id == "personal_care") {
+        rememberInfiniteTransition(label = "pulse_$id").animateFloat(
             initialValue = 1f,
-            targetValue = 1.2f,
+            targetValue = 1.15f,
             animationSpec = infiniteRepeatable(
-                animation = tween(800, easing = EaseInOutCubic),
+                animation = tween(850, easing = EaseInOutCubic),
                 repeatMode = RepeatMode.Reverse
             ),
-            label = ""
+            label = "scale_$id"
         )
     } else {
         remember { mutableStateOf(1f) }
@@ -883,33 +922,43 @@ fun CategoryItem(category: Category, onClick: () -> Unit) {
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(onClick = onClick)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .width(80.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
     ) {
+        // Icon circle with red background
         Box(
             modifier = Modifier
-                .size(50.dp)
+                .size(58.dp)
                 .clip(CircleShape)
-                .background(DeepPink.copy(alpha = 0.1f)),
+                .background(Color(0xFFFCFBFB)),  // ← your red hex here
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = category.icon,
-                contentDescription = category.name,
-                tint = DeepPink,
-                modifier = Modifier
-                    .size(28.dp)
-                    .scale(scale)
+            Text(
+                text = emoji,
+                fontSize = 35.sp,               // ← larger emoji
+                modifier = Modifier.scale(scale)
             )
         }
-        Spacer(modifier = Modifier.height(6.dp))
+
         Text(
-            text = category.name,
+            text = name,
             fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF2C2C2C),
+            textAlign = TextAlign.Center,
+            lineHeight = 14.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
-
 @Composable
 fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifier = Modifier) {
     var isFavorite by rememberSaveable { mutableStateOf(false) }
