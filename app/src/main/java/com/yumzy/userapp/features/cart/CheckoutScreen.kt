@@ -17,11 +17,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,6 +52,14 @@ import com.yumzy.userapp.ads.SharedInterstitialAdManager
 import com.yumzy.userapp.ui.theme.DarkPink
 import kotlinx.coroutines.delay
 import kotlin.random.Random
+
+// Coupon validation states
+sealed class CouponState {
+    object Idle : CouponState()
+    object Loading : CouponState()
+    data class Success(val discountPercent: Double) : CouponState()
+    data class Error(val message: String) : CouponState()
+}
 
 data class UserProfileDetails(
     val name: String = "...",
@@ -94,11 +107,20 @@ fun CheckoutScreen(
     var serviceCharge by remember { mutableStateOf(5.0) }
     var isLoadingCharges by remember { mutableStateOf(true) }
     val isPreOrder = cartItems.isNotEmpty() && cartItems.first().menuItem.category.startsWith("Pre-order")
-    val finalTotal = itemsSubtotal + deliveryCharge + serviceCharge
     var userProfile by remember { mutableStateOf<UserProfileDetails?>(null) }
     var isLoadingProfile by remember { mutableStateOf(true) }
     var showCelebration by remember { mutableStateOf(false) }
     var isPlacingOrder by remember { mutableStateOf(false) }
+
+    // Coupon / discount states
+    var couponInput by remember { mutableStateOf("") }
+    var appliedCoupon by remember { mutableStateOf("") }
+    var discountPercent by remember { mutableStateOf(0.0) }
+    var couponState by remember { mutableStateOf<CouponState>(CouponState.Idle) }
+
+    // Derived totals — recomputed whenever charges or discount change
+    val discountAmount = itemsSubtotal * (discountPercent / 100.0)
+    val finalTotal = itemsSubtotal - discountAmount + deliveryCharge + serviceCharge
 
     // Payment method states
     var selectedPaymentMethod by remember { mutableStateOf(PaymentMethod(PaymentType.COD)) }
@@ -107,6 +129,40 @@ fun CheckoutScreen(
     var selectedDigitalPayment by remember { mutableStateOf<PaymentType?>(null) }
 
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+
+    // Apply coupon: look up the code in Firebase "discount" collection
+    fun applyCoupon() {
+        val code = couponInput.trim().uppercase()
+        if (code.isEmpty()) return
+        focusManager.clearFocus()
+        couponState = CouponState.Loading
+        Firebase.firestore.collection("discount").document(code).get()
+            .addOnSuccessListener { document ->
+                if (document != null && document.exists()) {
+                    val pct = document.getDouble("discount") ?: 0.0
+                    if (pct > 0) {
+                        discountPercent = pct
+                        appliedCoupon = code
+                        couponState = CouponState.Success(pct)
+                    } else {
+                        couponState = CouponState.Error("Coupon has no discount value")
+                    }
+                } else {
+                    couponState = CouponState.Error("Invalid coupon code")
+                }
+            }
+            .addOnFailureListener {
+                couponState = CouponState.Error("Failed to verify coupon. Try again.")
+            }
+    }
+
+    fun removeCoupon() {
+        couponInput = ""
+        appliedCoupon = ""
+        discountPercent = 0.0
+        couponState = CouponState.Idle
+    }
 
     LaunchedEffect(Unit) {
         SharedInterstitialAdManager.loadAd(context)
@@ -427,6 +483,13 @@ fun CheckoutScreen(
                             }
                         } else {
                             PriceRow(label = "Items Subtotal", amount = itemsSubtotal)
+                            if (discountPercent > 0) {
+                                PriceRow(
+                                    label = "Discount (${discountPercent.toInt()}% off \"$appliedCoupon\")",
+                                    amount = -discountAmount,
+                                    isDiscount = true
+                                )
+                            }
                             PriceRow(label = "Delivery Charge", amount = deliveryCharge)
                             PriceRow(label = "Service Charge/Tax", amount = serviceCharge)
                             Divider(
@@ -438,7 +501,125 @@ fun CheckoutScreen(
                     }
                 }
                 Spacer(Modifier.height(20.dp))
-                // Payment Method Section
+
+                // ── Coupon / Voucher Section ──────────────────────────────────
+                SectionHeader(title = "Coupon / Voucher")
+                ModernCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (appliedCoupon.isEmpty()) {
+                            // Input row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = couponInput,
+                                    onValueChange = {
+                                        couponInput = it.uppercase()
+                                        if (couponState is CouponState.Error) couponState = CouponState.Idle
+                                    },
+                                    label = { Text("Enter coupon code") },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.LocalOffer,
+                                            contentDescription = null,
+                                            tint = DarkPink
+                                        )
+                                    },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = DarkPink,
+                                        focusedLabelColor = DarkPink
+                                    ),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(onDone = { applyCoupon() })
+                                )
+                                Button(
+                                    onClick = { applyCoupon() },
+                                    enabled = couponInput.isNotBlank() && couponState !is CouponState.Loading,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = DarkPink,
+                                        contentColor = Color.White
+                                    )
+                                ) {
+                                    if (couponState is CouponState.Loading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Text("Apply", fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+
+                            // Error message
+                            if (couponState is CouponState.Error) {
+                                Text(
+                                    (couponState as CouponState.Error).message,
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = Color(0xFFDC2626)
+                                    )
+                                )
+                            }
+                        } else {
+                            // Applied coupon chip
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        color = Color(0xFFE8F5E9),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.LocalOffer,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2E7D32),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        appliedCoupon,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    )
+                                    Text(
+                                        "${discountPercent.toInt()}% discount applied — you save ৳${"%.0f".format(discountAmount)}",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = Color(0xFF4CAF50)
+                                        )
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { removeCoupon() },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFDC2626))
+                                ) {
+                                    Text("Remove", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+                // ── End Coupon Section ────────────────────────────────────────
                 SectionHeader(title = "Payment Method")
                 ModernCard(
                     modifier = Modifier
@@ -1179,7 +1360,7 @@ fun Context.findActivity(): Activity? = when (this) {
 }
 
 @Composable
-fun PriceRow(label: String, amount: Double, isTotal: Boolean = false) {
+fun PriceRow(label: String, amount: Double, isTotal: Boolean = false, isDiscount: Boolean = false) {
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -1188,13 +1369,21 @@ fun PriceRow(label: String, amount: Double, isTotal: Boolean = false) {
             label,
             modifier = Modifier.weight(1f),
             fontWeight = if (isTotal) FontWeight.Bold else FontWeight.Medium,
-            color = if (isTotal) DarkPink else Color(0xFF666666),
+            color = when {
+                isTotal -> DarkPink
+                isDiscount -> Color(0xFF2E7D32)
+                else -> Color(0xFF666666)
+            },
             fontSize = if (isTotal) 18.sp else 16.sp
         )
         Text(
-            "৳$amount",
+            if (isDiscount) "-৳${"%.0f".format(-amount)}" else "৳$amount",
             fontWeight = if (isTotal) FontWeight.Bold else FontWeight.SemiBold,
-            color = if (isTotal) DarkPink else Color(0xFF333333),
+            color = when {
+                isTotal -> DarkPink
+                isDiscount -> Color(0xFF2E7D32)
+                else -> Color(0xFF333333)
+            },
             fontSize = if (isTotal) 18.sp else 16.sp
         )
     }
