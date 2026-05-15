@@ -23,7 +23,7 @@ class CartViewModel(application: Application) : AndroidViewModel(application) {
     private val cartDao = AppDatabase.getDatabase(application).cartDao()
 
     // Maximum items limit
-    private val MAX_ITEMS = 5
+    private val MAX_ITEMS = 500
 
     // Saved Cart from Room DB
     val savedCart = cartDao.getCartItems()
