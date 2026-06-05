@@ -264,6 +264,8 @@ fun HomeScreen(
                     .get().await()
 
                 val mainRestaurants = mainResSnapshot.documents.mapNotNull { doc ->
+                    val parentCategory = doc.getString("parentCategory") ?: ""
+                    if (parentCategory.equals("grocery", ignoreCase = true)) return@mapNotNull null
                     Restaurant(
                         id = doc.id,
                         name = doc.getString("name") ?: "No Name",
@@ -281,6 +283,8 @@ fun HomeScreen(
                     .get().await()
 
                 val miniRestaurants = miniResSnapshot.documents.mapNotNull { doc ->
+                    val parentCategory = doc.getString("parentCategory") ?: ""
+                    if (parentCategory.equals("grocery", ignoreCase = true)) return@mapNotNull null
                     Restaurant(
                         id = doc.id,
                         name = doc.getString("name") ?: "No Name",
