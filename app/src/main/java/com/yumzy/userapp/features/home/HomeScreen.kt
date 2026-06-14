@@ -89,7 +89,8 @@ data class Restaurant(
     val imageUrl: String?,
     val open: String = "yes",
     val type: RestaurantType, // To distinguish between Main and Mini
-    val priority: Int? = null // For sorting
+    val priority: Int? = null, // For sorting
+    val parentCategory: String = "" // e.g. "personal_care"
 )
 
 data class Category(val name: String, val icon: ImageVector, val id: String)
@@ -273,7 +274,8 @@ fun HomeScreen(
                         imageUrl = doc.getString("imageUrl"),
                         open = "yes",
                         type = RestaurantType.MAIN,
-                        priority = doc.getLong("priority")?.toInt()
+                        priority = doc.getLong("priority")?.toInt(),
+                        parentCategory = parentCategory
                     )
                 }
 
@@ -292,7 +294,8 @@ fun HomeScreen(
                         imageUrl = doc.getString("imageUrl"),
                         open = doc.getString("open") ?: "yes",
                         type = RestaurantType.MINI,
-                        priority = doc.getLong("priority")?.toInt()
+                        priority = doc.getLong("priority")?.toInt(),
+                        parentCategory = parentCategory
                     )
                 }
 
@@ -1017,6 +1020,46 @@ fun RestaurantCard(restaurant: Restaurant, onClick: () -> Unit, modifier: Modifi
                                     fontSize = 14.sp,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                 )
+                            }
+                        }
+                    }
+
+                    // "Pre Order Only" tag for personal_care open restaurants
+                    if (!isClosed && restaurant.parentCategory.equals("personal_care", ignoreCase = true)) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        brush = Brush.horizontalGradient(
+                                            colors = listOf(Color(0xFFFF6F91), Color(0xFFFF3CAC))
+                                        ),
+                                        shape = RoundedCornerShape(20.dp)
+                                    )
+                                    .shadow(4.dp, RoundedCornerShape(20.dp), clip = false)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Schedule,
+                                        contentDescription = "Pre Order",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Pre Order Only",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.3.sp
+                                    )
+                                }
                             }
                         }
                     }
