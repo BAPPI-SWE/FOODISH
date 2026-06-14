@@ -2,6 +2,8 @@
 package com.yumzy.userapp.features.orders
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -62,6 +64,27 @@ fun OrdersScreen(
     var hasShownAd by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+
+    // Full phone number from Firebase Auth (e.g. "+8801712345678")
+    var userPhone by remember { mutableStateOf(Firebase.auth.currentUser?.phoneNumber ?: "") }
+
+    // Fetch phone from Firestore if Auth doesn't have it (some login flows)
+    LaunchedEffect(Unit) {
+        if (userPhone.isEmpty()) {
+            val uid = Firebase.auth.currentUser?.uid
+            if (uid != null) {
+                Firebase.firestore.collection("users").document(uid).get()
+                    .addOnSuccessListener { doc ->
+                        userPhone = doc.getString("phoneNumber") ?: doc.getString("phone") ?: ""
+                    }
+            }
+        }
+    }
+
+    // Last 4 digits of phone number used as a display User ID on cards
+    val userPhoneLastFour = remember(userPhone) {
+        if (userPhone.length >= 4) userPhone.takeLast(4) else userPhone
+    }
 
     LaunchedEffect(showAdOnLoad) {
         if (showAdOnLoad && !hasShownAd) {
@@ -173,6 +196,7 @@ fun OrdersScreen(
                 items(orders) { order ->
                     ModernOrderCard(
                         order = order,
+                        userPhoneLastFour = userPhoneLastFour,
                         onClick = { selectedOrder = order }
                     )
                 }
@@ -183,14 +207,16 @@ fun OrdersScreen(
     selectedOrder?.let { order ->
         EnhancedOrderDetailsDialog(
             order = order,
+            userPhoneLastFour = userPhoneLastFour,
             onDismiss = { selectedOrder = null },
             onCancelOrder = {
-                // Logic to cancel the order in Firestore
-                Firebase.firestore.collection("orders").document(order.id)
-                    .update("orderStatus", "Cancelled")
-                    .addOnSuccessListener {
-                        selectedOrder = null // Close dialog on success
-                    }
+                // Redirect to WhatsApp helpline for order cancellation
+                val whatsappNumber = "8801746324620"
+                val message = "Hello, I would like to cancel my order. My phone number is $userPhone."
+                val uri = Uri.parse("https://wa.me/$whatsappNumber?text=${Uri.encode(message)}")
+                val intent = Intent(Intent.ACTION_VIEW, uri)
+                context.startActivity(intent)
+                selectedOrder = null
             }
         )
     }
@@ -208,6 +234,7 @@ private fun android.content.Context.findActivity(): Activity? {
 @Composable
 fun ModernOrderCard(
     order: Order,
+    userPhoneLastFour: String,
     onClick: () -> Unit
 ) {
     Card(
@@ -258,7 +285,30 @@ fun ModernOrderCard(
                 StatusBadge(status = order.orderStatus)
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // User ID row (last 4 digits of phone, shown for reference)
+            if (userPhoneLastFour.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = Color(0xFF999999),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "User ID: *$userPhoneLastFour",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF999999),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Compact info row: items, date, time
             Row(
@@ -458,8 +508,9 @@ fun formatTime(timestamp: Timestamp): String {
 @Composable
 fun EnhancedOrderDetailsDialog(
     order: Order,
+    userPhoneLastFour: String,
     onDismiss: () -> Unit,
-    onCancelOrder: () -> Unit // Added callback for cancel logic
+    onCancelOrder: () -> Unit
 ) {
     // State to control the confirmation dialog
     var showCancelConfirmDialog by remember { mutableStateOf(false) }
@@ -480,7 +531,7 @@ fun EnhancedOrderDetailsDialog(
         AlertDialog(
             onDismissRequest = { showCancelConfirmDialog = false },
             title = { Text("Cancel Order?", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to cancel this order? This action cannot be undone.") },
+            text = { Text("You'll be redirected to our WhatsApp helpline to complete your cancellation request.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -489,7 +540,7 @@ fun EnhancedOrderDetailsDialog(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
                 ) {
-                    Text("Yes, Cancel")
+                    Text("Go to WhatsApp")
                 }
             },
             dismissButton = {
@@ -526,8 +577,27 @@ fun EnhancedOrderDetailsDialog(
                     "Ordered on ${formatDate(order.createdAt)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF666666),
-                    modifier = Modifier.padding(bottom = 8.dp)
+                    modifier = Modifier.padding(bottom = 4.dp)
                 )
+                if (userPhoneLastFour.isNotEmpty()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = Color(0xFF999999),
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = "User ID: *$userPhoneLastFour",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF999999)
+                        )
+                    }
+                }
                 Text(
                     "Status: ${order.orderStatus}",
                     style = MaterialTheme.typography.bodySmall,
