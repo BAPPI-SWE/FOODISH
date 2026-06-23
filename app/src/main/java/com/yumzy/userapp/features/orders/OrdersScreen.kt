@@ -50,7 +50,9 @@ data class Order(
     val createdAt: Timestamp = Timestamp.now(),
     val items: List<OrderItem> = emptyList(),
     val deliveryCharge: Double = 0.0,
-    val serviceCharge: Double = 0.0
+    val serviceCharge: Double = 0.0,
+    val riderName: String = "",
+    val riderId: String = ""
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,7 +128,9 @@ fun OrdersScreen(
                                 createdAt = doc.getTimestamp("createdAt") ?: Timestamp.now(),
                                 items = orderItems,
                                 deliveryCharge = doc.getDouble("deliveryCharge") ?: 0.0,
-                                serviceCharge = doc.getDouble("serviceCharge") ?: 0.0
+                                serviceCharge = doc.getDouble("serviceCharge") ?: 0.0,
+                                riderName = doc.getString("riderName") ?: "",
+                                riderId = doc.getString("riderId") ?: ""
                             )
                         }.sortedByDescending { it.createdAt }
                     }
@@ -512,8 +516,30 @@ fun EnhancedOrderDetailsDialog(
     onDismiss: () -> Unit,
     onCancelOrder: () -> Unit
 ) {
+    val context = LocalContext.current
+
     // State to control the confirmation dialog
     var showCancelConfirmDialog by remember { mutableStateOf(false) }
+
+    // Rider phone fetched from Firestore riders collection
+    var riderPhone by remember { mutableStateOf("") }
+    var isFetchingRider by remember { mutableStateOf(false) }
+
+    // Fetch rider phone using riderId when dialog opens
+    LaunchedEffect(order.riderId) {
+        riderPhone = ""
+        if (order.riderId.isNotEmpty()) {
+            isFetchingRider = true
+            Firebase.firestore.collection("riders").document(order.riderId).get()
+                .addOnSuccessListener { doc ->
+                    riderPhone = doc.getString("phone") ?: ""
+                    isFetchingRider = false
+                }
+                .addOnFailureListener {
+                    isFetchingRider = false
+                }
+        }
+    }
 
     // Calculate cancellability: Order is < 5 minutes old AND status is "Pending"
     val isCancellable by remember(order) {
@@ -603,8 +629,85 @@ fun EnhancedOrderDetailsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = DarkPink,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
+
+                // --- Rider Info Box ---
+                if (order.riderName.isNotEmpty()) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFF0FDF4),
+                        tonalElevation = 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "YOUR RIDER",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF16A34A),
+                                    letterSpacing = 0.8.sp
+                                )
+                                Text(
+                                    text = order.riderName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1A1A1A)
+                                )
+                                when {
+                                    isFetchingRider -> Text(
+                                        text = "Loading contact...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFF999999)
+                                    )
+                                    riderPhone.isNotEmpty() -> Text(
+                                        text = riderPhone,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color(0xFF4B5563)
+                                    )
+                                }
+                            }
+
+                            // Call button — shown only when phone is available
+                            if (riderPhone.isNotEmpty()) {
+                                Button(
+                                    onClick = {
+                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$riderPhone"))
+                                        context.startActivity(intent)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF16A34A),
+                                        contentColor = Color.White
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Call,
+                                        contentDescription = "Call Rider",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "Call",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                // --- End Rider Info Box ---
 
                 Text(
                     "Items:",
@@ -628,7 +731,7 @@ fun EnhancedOrderDetailsDialog(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color(0xFF333333)
                             )
-                            if(item.miniResName.isNotEmpty()) {
+                            if (item.miniResName.isNotEmpty()) {
                                 Text(
                                     text = "from ${item.miniResName}",
                                     style = MaterialTheme.typography.bodySmall,
