@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.WrongLocation
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.google.firebase.auth.ktx.auth
@@ -89,6 +91,9 @@ fun SubCategoryListScreen(
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Categories", "Shops")
     val coroutineScope = rememberCoroutineScope()
+
+    // Show Grocery terms popup once when entering the Grocery section
+    var showGroceryTerms by remember { mutableStateOf(mainCategoryId.equals("grocery", ignoreCase = true)) }
 
     // State hoisting for scroll detection
     val listState = rememberLazyListState()
@@ -300,6 +305,144 @@ fun SubCategoryListScreen(
                 .align(Alignment.BottomEnd)
                 .padding(bottom = 16.dp)
                 .zIndex(100f)
+        )
+
+        // Grocery order terms & conditions popup
+        if (showGroceryTerms) {
+            GroceryTermsDialog(onDismiss = { showGroceryTerms = false })
+        }
+    }
+}
+
+@Composable
+fun GroceryTermsDialog(onDismiss: () -> Unit) {
+    // Fresh, smooth red-white combination palette
+    val freshRed = Color(0xFFE8354E)
+    val softRedBg = Color(0xFFFFF3F4)
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color.White,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Header band (red -> soft red gradient)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(freshRed, Color(0xFFF4566B))
+                            )
+                        )
+                        .padding(vertical = 22.dp, horizontal = 20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(Color.White.copy(alpha = 0.18f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.ShoppingCart,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = "Grocery অর্ডার এর শর্তাবলী",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 19.sp
+                        )
+                    }
+                }
+
+                // Body
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    TermRow(
+                        number = "১",
+                        text = "শুধু প্রি-অর্ডার করতে পারবেন। প্রি-অর্ডারের ৩ ঘণ্টার মধ্যে ডেলিভারি।",
+                        accent = freshRed,
+                        bg = softRedBg
+                    )
+                    TermRow(
+                        number = "২",
+                        text = "Grocery item এর সাথে Fast food restaurant er খাবার বা city food এর খাবার অর্ডার করলে অর্ডার Cancel হয়ে যাবে।",
+                        accent = freshRed,
+                        bg = softRedBg
+                    )
+                }
+
+                // Action button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
+                ) {
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = freshRed)
+                    ) {
+                        Text(
+                            text = "বুঝেছি",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TermRow(number: String, text: String, accent: Color, bg: Color) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(bg)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .background(accent, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = number,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = text,
+            color = Color(0xFF2B2B2B),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
         )
     }
 }
