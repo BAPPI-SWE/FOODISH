@@ -33,8 +33,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -105,6 +107,8 @@ fun CheckoutScreen(
     val itemsSubtotal = cartItems.sumOf { it.menuItem.price * it.quantity }
     var deliveryCharge by remember { mutableStateOf(20.0) }
     var serviceCharge by remember { mutableStateOf(5.0) }
+    var rainyCharge by remember { mutableStateOf(0.0) }
+    var showRainyDialog by remember { mutableStateOf(false) }
     var isLoadingCharges by remember { mutableStateOf(true) }
     val isPreOrder = cartItems.isNotEmpty() && cartItems.first().menuItem.category.startsWith("Pre-order")
     var userProfile by remember { mutableStateOf<UserProfileDetails?>(null) }
@@ -120,7 +124,7 @@ fun CheckoutScreen(
 
     // Derived totals — recomputed whenever charges or discount change
     val discountAmount = itemsSubtotal * (discountPercent / 100.0)
-    val finalTotal = itemsSubtotal - discountAmount + deliveryCharge + serviceCharge
+    val finalTotal = itemsSubtotal - discountAmount + deliveryCharge + serviceCharge + rainyCharge
 
     // Payment method states
     var selectedPaymentMethod by remember { mutableStateOf(PaymentMethod(PaymentType.COD)) }
@@ -206,9 +210,14 @@ fun CheckoutScreen(
                 .addOnSuccessListener { documents ->
                     var baseDeliveryCharge = 20.0
                     var baseServiceCharge = 5.0
+                    var baseRainyCharge = 0.0
 
                     if (!documents.isEmpty) {
                         val locationDoc = documents.documents[0]
+                        // Rainy day extra charge for this base location.
+                        // Applies only when the base location name matches (which it does here,
+                        // since the query filters by name == baseLocation).
+                        baseRainyCharge = (locationDoc.get("rainyCharge") as? Number)?.toDouble() ?: 0.0
                         val subLocations = locationDoc.get("subLocations") as? List<String> ?: emptyList()
                         val subLocationIndex = subLocations.indexOf(userProfile!!.subLocation)
                         if (subLocationIndex != -1) {
@@ -239,6 +248,8 @@ fun CheckoutScreen(
                         if (baseItemIds.isEmpty()) {
                             deliveryCharge = baseDeliveryCharge
                             serviceCharge = baseServiceCharge
+                            rainyCharge = baseRainyCharge
+                            showRainyDialog = baseRainyCharge > 0
                             isLoadingCharges = false
                             return@addOnSuccessListener
                         }
@@ -254,6 +265,8 @@ fun CheckoutScreen(
                                     if (itemsProcessed == baseItemIds.size) {
                                         deliveryCharge = baseDeliveryCharge + additionalDelivery
                                         serviceCharge = baseServiceCharge + additionalService
+                                        rainyCharge = baseRainyCharge
+                                        showRainyDialog = baseRainyCharge > 0
                                         isLoadingCharges = false
                                     }
                                 }
@@ -262,6 +275,8 @@ fun CheckoutScreen(
                                     if (itemsProcessed == baseItemIds.size) {
                                         deliveryCharge = baseDeliveryCharge + additionalDelivery
                                         serviceCharge = baseServiceCharge + additionalService
+                                        rainyCharge = baseRainyCharge
+                                        showRainyDialog = baseRainyCharge > 0
                                         isLoadingCharges = false
                                     }
                                 }
@@ -269,6 +284,8 @@ fun CheckoutScreen(
                     } else {
                         deliveryCharge = baseDeliveryCharge
                         serviceCharge = baseServiceCharge
+                        rainyCharge = baseRainyCharge
+                        showRainyDialog = baseRainyCharge > 0
                         isLoadingCharges = false
                     }
                 }
@@ -492,6 +509,9 @@ fun CheckoutScreen(
                             }
                             PriceRow(label = "Delivery Charge", amount = deliveryCharge)
                             PriceRow(label = "Service Charge/Tax", amount = serviceCharge)
+                            if (rainyCharge > 0) {
+                                PriceRow(label = "\uD83C\uDF27\uFE0F Rainy Day Charge", amount = rainyCharge)
+                            }
                             Divider(
                                 Modifier.padding(vertical = 8.dp),
                                 color = Color(0xFFE0E0E0)
@@ -736,6 +756,14 @@ fun CheckoutScreen(
             )
         }
 
+        // Rainy Day Charge Warning Dialog
+        if (showRainyDialog && rainyCharge > 0) {
+            RainyDayDialog(
+                rainyCharge = rainyCharge,
+                onDismiss = { showRainyDialog = false }
+            )
+        }
+
         // Celebration Animation Overlay
         if (showCelebration) {
             OrderSentAnimation(
@@ -744,6 +772,152 @@ fun CheckoutScreen(
             CelebrationAnimation(
                 onAnimationComplete = { }
             )
+        }
+    }
+}
+
+@Composable
+fun RainyDayDialog(
+    rainyCharge: Double,
+    onDismiss: () -> Unit
+) {
+    // Gentle pop-in animation
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.7f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "rainyScale"
+    )
+
+    // Soft floating motion for the emoji
+    val infinite = rememberInfiniteTransition(label = "rainyFloat")
+    val floatY by infinite.animateFloat(
+        initialValue = -4f,
+        targetValue = 4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "floatY"
+    )
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .shadow(24.dp, RoundedCornerShape(28.dp))
+                .clip(RoundedCornerShape(28.dp))
+                .background(Color.White)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Cute circular emoji badge with soft rainy-blue gradient
+                Box(
+                    modifier = Modifier
+                        .size(96.dp)
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0xFFE3F2FD),
+                                    Color(0xFFBBDEFB)
+                                )
+                            ),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "\uD83C\uDF27\uFE0F",
+                        fontSize = 46.sp,
+                        modifier = Modifier.graphicsLayer { translationY = floatY }
+                    )
+                }
+
+                Spacer(Modifier.height(18.dp))
+
+                Text(
+                    text = "It's Raining! \u2614",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = Color(0xFF1A1A1A),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                Text(
+                    text = "Due to rainy weather in your area, a small extra charge helps our delivery heroes reach you safely through the rain. \uD83D\uDE4F",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF666666),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(Modifier.height(18.dp))
+
+                // Charge highlight chip
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFFE3F2FD))
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Rainy Day Charge",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = Color(0xFF1565C0)
+                    )
+                    Text(
+                        text = "৳${"%.0f".format(rainyCharge)}",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = Color(0xFF0D47A1)
+                    )
+                }
+
+                Spacer(Modifier.height(22.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DarkPink,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(
+                        "Got it \uD83D\uDC4D",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }
