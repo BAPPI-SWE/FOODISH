@@ -59,9 +59,20 @@ import kotlin.random.Random
 sealed class CouponState {
     object Idle : CouponState()
     object Loading : CouponState()
-    data class Success(val discountPercent: Double) : CouponState()
+    data class Success(val discountPercent: Double, val isFreeDelivery: Boolean) : CouponState()
     data class Error(val message: String) : CouponState()
 }
+
+// A single voucher/coupon as stored in the "discount" Firestore collection.
+// Document id      -> code (e.g. "FOOD25", "FREE")
+// field "taka"     -> minimum order amount (৳) required to use this code
+// field "discount" -> % discount on subtotal (ignored for the special "FREE" code)
+data class VoucherInfo(
+    val code: String,
+    val discountPercent: Double,
+    val minOrderAmount: Double,
+    val isFreeDelivery: Boolean
+)
 
 data class UserProfileDetails(
     val name: String = "...",
@@ -120,11 +131,20 @@ fun CheckoutScreen(
     var couponInput by remember { mutableStateOf("") }
     var appliedCoupon by remember { mutableStateOf("") }
     var discountPercent by remember { mutableStateOf(0.0) }
+    var isFreeDeliveryCoupon by remember { mutableStateOf(false) }
+    var appliedMinOrderAmount by remember { mutableStateOf(0.0) }
     var couponState by remember { mutableStateOf<CouponState>(CouponState.Idle) }
+
+    // "View available coupons" dialog states
+    var showVoucherDialog by remember { mutableStateOf(false) }
+    var isLoadingVouchers by remember { mutableStateOf(false) }
+    var voucherList by remember { mutableStateOf<List<VoucherInfo>>(emptyList()) }
+    var voucherFetchError by remember { mutableStateOf<String?>(null) }
 
     // Derived totals — recomputed whenever charges or discount change
     val discountAmount = itemsSubtotal * (discountPercent / 100.0)
-    val finalTotal = itemsSubtotal - discountAmount + deliveryCharge + serviceCharge + rainyCharge
+    val effectiveDeliveryCharge = if (isFreeDeliveryCoupon) 0.0 else deliveryCharge
+    val finalTotal = itemsSubtotal - discountAmount + effectiveDeliveryCharge + serviceCharge + rainyCharge
 
     // Payment method states
     var selectedPaymentMethod by remember { mutableStateOf(PaymentMethod(PaymentType.COD)) }
@@ -135,7 +155,10 @@ fun CheckoutScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
-    // Apply coupon: look up the code in Firebase "discount" collection
+    // Apply coupon: look up the code in Firebase "discount" collection.
+    // Document schema: { taka: <minimum order amount>, discount: <percent off> }
+    // Special fixed code "FREE": if subtotal >= taka, delivery charge becomes free.
+    // Any other code: if subtotal >= taka, apply `discount`% off the subtotal.
     fun applyCoupon() {
         val code = couponInput.trim().uppercase()
         if (code.isEmpty()) return
@@ -144,20 +167,39 @@ fun CheckoutScreen(
         Firebase.firestore.collection("discount").document(code).get()
             .addOnSuccessListener { document ->
                 if (document != null && document.exists()) {
-                    val pct = document.getDouble("discount") ?: 0.0
-                    if (pct > 0) {
-                        discountPercent = pct
+                    val minOrderAmount = document.getDouble("taka") ?: 0.0
+
+                    if (itemsSubtotal < minOrderAmount) {
+                        couponState = CouponState.Error(
+                            "এই কোডটি ব্যবহার করতে ন্যূনতম ৳${"%.0f".format(minOrderAmount)} টাকার অর্ডার করতে হবে"
+                        )
+                        return@addOnSuccessListener
+                    }
+
+                    if (code == "FREE") {
+                        isFreeDeliveryCoupon = true
+                        discountPercent = 0.0
                         appliedCoupon = code
-                        couponState = CouponState.Success(pct)
+                        appliedMinOrderAmount = minOrderAmount
+                        couponState = CouponState.Success(0.0, true)
                     } else {
-                        couponState = CouponState.Error("Coupon has no discount value")
+                        val pct = document.getDouble("discount") ?: 0.0
+                        if (pct > 0) {
+                            isFreeDeliveryCoupon = false
+                            discountPercent = pct
+                            appliedCoupon = code
+                            appliedMinOrderAmount = minOrderAmount
+                            couponState = CouponState.Success(pct, false)
+                        } else {
+                            couponState = CouponState.Error("এই কুপনে কোনো ডিসকাউন্ট নেই")
+                        }
                     }
                 } else {
-                    couponState = CouponState.Error("Invalid coupon code")
+                    couponState = CouponState.Error("ভুল কুপন কোড")
                 }
             }
             .addOnFailureListener {
-                couponState = CouponState.Error("Failed to verify coupon. Try again.")
+                couponState = CouponState.Error("কুপন যাচাই করা যায়নি, আবার চেষ্টা করুন")
             }
     }
 
@@ -165,7 +207,34 @@ fun CheckoutScreen(
         couponInput = ""
         appliedCoupon = ""
         discountPercent = 0.0
+        isFreeDeliveryCoupon = false
+        appliedMinOrderAmount = 0.0
         couponState = CouponState.Idle
+    }
+
+    // Fetch every document from the "discount" collection to show the user
+    // a nice, human-readable list of currently available coupons/vouchers.
+    fun fetchAvailableVouchers() {
+        isLoadingVouchers = true
+        voucherFetchError = null
+        Firebase.firestore.collection("discount").get()
+            .addOnSuccessListener { snapshot ->
+                voucherList = snapshot.documents.mapNotNull { doc ->
+                    val minOrderAmount = doc.getDouble("taka") ?: return@mapNotNull null
+                    val pct = doc.getDouble("discount") ?: 0.0
+                    VoucherInfo(
+                        code = doc.id,
+                        discountPercent = pct,
+                        minOrderAmount = minOrderAmount,
+                        isFreeDelivery = doc.id.equals("FREE", ignoreCase = true)
+                    )
+                }.sortedBy { it.minOrderAmount }
+                isLoadingVouchers = false
+            }
+            .addOnFailureListener {
+                voucherFetchError = "ভাউচার লোড করা যায়নি, আবার চেষ্টা করুন"
+                isLoadingVouchers = false
+            }
     }
 
     LaunchedEffect(Unit) {
@@ -362,7 +431,7 @@ fun CheckoutScreen(
 
                         showCelebration = true
                         isPlacingOrder = true
-                        onConfirmOrder(deliveryCharge, serviceCharge, finalTotal, paymentString)
+                        onConfirmOrder(effectiveDeliveryCharge, serviceCharge, finalTotal, paymentString)
                     }
                 )
             }
@@ -507,7 +576,15 @@ fun CheckoutScreen(
                                     isDiscount = true
                                 )
                             }
-                            PriceRow(label = "Delivery Charge", amount = deliveryCharge)
+                            if (isFreeDeliveryCoupon) {
+                                PriceRow(
+                                    label = "Delivery Charge (\"$appliedCoupon\" applied)",
+                                    amount = -deliveryCharge,
+                                    isDiscount = true
+                                )
+                            } else {
+                                PriceRow(label = "Delivery Charge", amount = deliveryCharge)
+                            }
                             PriceRow(label = "Service Charge/Tax", amount = serviceCharge)
                             if (rainyCharge > 0) {
                                 PriceRow(label = "\uD83C\uDF27\uFE0F Rainy Day Charge", amount = rainyCharge)
@@ -594,6 +671,33 @@ fun CheckoutScreen(
                                     )
                                 )
                             }
+
+                            // View available vouchers
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showVoucherDialog = true
+                                        if (voucherList.isEmpty()) fetchAvailableVouchers()
+                                    },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.LocalOffer,
+                                    contentDescription = null,
+                                    tint = DarkPink,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "সব ভাউচার দেখুন",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = DarkPink
+                                    )
+                                )
+                            }
                         } else {
                             // Applied coupon chip
                             Row(
@@ -622,7 +726,11 @@ fun CheckoutScreen(
                                         )
                                     )
                                     Text(
-                                        "${discountPercent.toInt()}% discount applied — you save ৳${"%.0f".format(discountAmount)}",
+                                        text = if (isFreeDeliveryCoupon) {
+                                            "ফ্রি ডেলিভারি প্রযোজ্য হয়েছে — আপনি বাঁচালেন ৳${"%.0f".format(deliveryCharge)}"
+                                        } else {
+                                            "${discountPercent.toInt()}% discount applied — you save ৳${"%.0f".format(discountAmount)}"
+                                        },
                                         style = MaterialTheme.typography.bodySmall.copy(
                                             color = Color(0xFF4CAF50)
                                         )
@@ -640,6 +748,21 @@ fun CheckoutScreen(
                 }
                 Spacer(Modifier.height(20.dp))
                 // ── End Coupon Section ────────────────────────────────────────
+
+                if (showVoucherDialog) {
+                    VoucherListDialog(
+                        vouchers = voucherList,
+                        isLoading = isLoadingVouchers,
+                        errorMessage = voucherFetchError,
+                        onVoucherSelected = { code ->
+                            couponInput = code
+                            showVoucherDialog = false
+                            applyCoupon()
+                        },
+                        onDismiss = { showVoucherDialog = false }
+                    )
+                }
+
                 SectionHeader(title = "Payment Method")
                 ModernCard(
                     modifier = Modifier
@@ -1531,6 +1654,224 @@ fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+@Composable
+fun VoucherListDialog(
+    vouchers: List<VoucherInfo>,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onVoucherSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .heightIn(max = 560.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(DarkPink, DarkPink.copy(alpha = 0.85f))
+                            )
+                        )
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.LocalOffer,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "উপলব্ধ ভাউচার",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        )
+                        Text(
+                            "সেরা অফারটি বেছে নিন",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                        )
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Text(
+                            "\u2715",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 160.dp, max = 460.dp)
+                ) {
+                    when {
+                        isLoading -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 48.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator(color = DarkPink, strokeWidth = 3.dp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    "ভাউচার লোড হচ্ছে...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFF666666)
+                                )
+                            }
+                        }
+                        errorMessage != null -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    errorMessage,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFFDC2626),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                        vouchers.isEmpty() -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 48.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.LocalOffer,
+                                    contentDescription = null,
+                                    tint = Color(0xFFBDBDBD),
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    "এই মুহূর্তে কোনো ভাউচার উপলব্ধ নেই",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Color(0xFF666666)
+                                )
+                            }
+                        }
+                        else -> {
+                            Column(
+                                modifier = Modifier
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                vouchers.forEach { voucher ->
+                                    VoucherCard(
+                                        voucher = voucher,
+                                        onUseClicked = { onVoucherSelected(voucher.code) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun VoucherCard(voucher: VoucherInfo, onUseClicked: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                if (voucher.isFreeDelivery) Color(0xFFE3F2FD) else Color(0xFFFFF3E0)
+            )
+            .border(
+                width = 1.dp,
+                color = if (voucher.isFreeDelivery) Color(0xFF90CAF9) else Color(0xFFFFCC80),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Code badge
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color.White)
+                .border(
+                    width = 1.dp,
+                    color = if (voucher.isFreeDelivery) Color(0xFF2196F3) else DarkPink,
+                    shape = RoundedCornerShape(10.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text(
+                voucher.code,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = if (voucher.isFreeDelivery) Color(0xFF1565C0) else DarkPink
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (voucher.isFreeDelivery) "\uD83D\uDE9A ফ্রি ডেলিভারি" else "\uD83C\uDF89 ${voucher.discountPercent.toInt()}% ছাড়",
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF333333)
+                )
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "৳${"%.0f".format(voucher.minOrderAmount)} টাকার বেশি অর্ডারে প্রযোজ্য",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = Color(0xFF757575)
+                )
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Button(
+            onClick = onUseClicked,
+            shape = RoundedCornerShape(10.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (voucher.isFreeDelivery) Color(0xFF2196F3) else DarkPink,
+                contentColor = Color.White
+            )
+        ) {
+            Text("ব্যবহার করুন", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
 }
 
 @Composable
