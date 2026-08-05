@@ -155,7 +155,48 @@ fun CheckoutScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
 
-    // Apply coupon: look up the code in Firebase "discount" collection.
+    // Fallback lookup: "hidden" codes in the "discount_secret" collection.
+    // These are NEVER listed anywhere in the app (no public voucher list shows them) —
+    // they only work if someone types the exact code in manually.
+    // Document schema: { discount: <percent off> }  (optionally "taka" for a min order amount)
+    // Firestore rules only allow a direct `get` on this collection (not `list`),
+    // so the codes can't be enumerated/dumped by a client — only looked up by exact ID.
+    fun trySecretCoupon(code: String) {
+        Firebase.firestore.collection("discount_secret").document(code).get()
+            .addOnSuccessListener { document ->
+                if (document != null && document.exists()) {
+                    val minOrderAmount = document.getDouble("taka") ?: 0.0
+                    val pct = document.getDouble("discount") ?: 0.0
+
+                    if (itemsSubtotal < minOrderAmount) {
+                        couponState = CouponState.Error(
+                            "এই কোডটি ব্যবহার করতে ন্যূনতম ৳${"%.0f".format(minOrderAmount)} টাকার অর্ডার করতে হবে"
+                        )
+                        return@addOnSuccessListener
+                    }
+
+                    if (pct > 0) {
+                        isFreeDeliveryCoupon = false
+                        discountPercent = pct
+                        appliedCoupon = code
+                        appliedMinOrderAmount = minOrderAmount
+                        couponState = CouponState.Success(pct, false)
+                    } else {
+                        couponState = CouponState.Error("এই কুপনে কোনো ডিসকাউন্ট নেই")
+                    }
+                } else {
+                    couponState = CouponState.Error("ভুল কুপন কোড")
+                }
+            }
+            .addOnFailureListener {
+                couponState = CouponState.Error("কুপন যাচাই করা যায়নি, আবার চেষ্টা করুন")
+            }
+    }
+
+    // Apply coupon: look up the code in Firebase "discount" collection first (public/visible
+    // coupons shown in the voucher list). If it isn't found there, silently fall back to the
+    // "discount_secret" collection — those codes only work if typed in manually and are never
+    // shown in the app's voucher list.
     // Document schema: { taka: <minimum order amount>, discount: <percent off> }
     // Special fixed code "FREE": if subtotal >= taka, delivery charge becomes free.
     // Any other code: if subtotal >= taka, apply `discount`% off the subtotal.
@@ -195,7 +236,8 @@ fun CheckoutScreen(
                         }
                     }
                 } else {
-                    couponState = CouponState.Error("ভুল কুপন কোড")
+                    // Not a public coupon — try the hidden/secret collection before giving up.
+                    trySecretCoupon(code)
                 }
             }
             .addOnFailureListener {

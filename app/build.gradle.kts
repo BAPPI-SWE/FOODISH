@@ -18,9 +18,9 @@ android {
     defaultConfig {
         applicationId = "com.yumzy.userapp"
         minSdk = 24
-        targetSdk = 35
-        versionCode = 33
-        versionName = "33.0.1"
+        targetSdk = 36
+        versionCode = 34
+        versionName = "34.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
