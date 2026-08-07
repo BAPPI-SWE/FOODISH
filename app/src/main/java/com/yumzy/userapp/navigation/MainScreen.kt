@@ -402,7 +402,7 @@ fun MainScreen(
                         cartItems = itemsForRestaurant,
                         restaurantId = restaurantId,
                         onBackClicked = { navController.popBackStack() },
-                        onConfirmOrder = { delivery, service, total, paymentMethod ->
+                        onConfirmOrder = { delivery, service, total, paymentMethod, userNote ->
                             scope.launch {
                                 val user = Firebase.auth.currentUser ?: return@launch
                                 Firebase.firestore.collection("users").document(user.uid).get()
@@ -436,7 +436,8 @@ fun MainScreen(
                                             "createdAt" to Timestamp.now(),
                                             "orderType" to orderType,
                                             "preOrderCategory" to if (orderType == "PreOrder") firstItemCategory else "",
-                                            "payment" to paymentMethod  // NEW: Add payment method field
+                                            "payment" to paymentMethod,  // NEW: Add payment method field
+                                            "userNote" to userNote  // NEW: Optional note from the customer
                                         )
 
                                         Firebase.firestore.collection("orders").add(newOrder)

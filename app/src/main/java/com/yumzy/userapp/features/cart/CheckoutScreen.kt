@@ -25,6 +25,9 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notes
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.*
@@ -112,7 +115,7 @@ enum class PaymentType {
 fun CheckoutScreen(
     cartItems: List<CartItem>,
     restaurantId: String? = null,
-    onConfirmOrder: (deliveryCharge: Double, serviceCharge: Double, finalTotal: Double, paymentMethod: String) -> Unit,
+    onConfirmOrder: (deliveryCharge: Double, serviceCharge: Double, finalTotal: Double, paymentMethod: String, userNote: String) -> Unit,
     onBackClicked: () -> Unit
 ) {
     val itemsSubtotal = cartItems.sumOf { it.menuItem.price * it.quantity }
@@ -126,6 +129,10 @@ fun CheckoutScreen(
     var isLoadingProfile by remember { mutableStateOf(true) }
     var showCelebration by remember { mutableStateOf(false) }
     var isPlacingOrder by remember { mutableStateOf(false) }
+
+    // Order userNote states
+    var userNote by remember { mutableStateOf("") }
+    var showUserNoteDialog by remember { mutableStateOf(false) }
 
     // Coupon / discount states
     var couponInput by remember { mutableStateOf("") }
@@ -473,7 +480,7 @@ fun CheckoutScreen(
 
                         showCelebration = true
                         isPlacingOrder = true
-                        onConfirmOrder(effectiveDeliveryCharge, serviceCharge, finalTotal, paymentString)
+                        onConfirmOrder(effectiveDeliveryCharge, serviceCharge, finalTotal, paymentString, userNote.trim())
                     }
                 )
             }
@@ -534,7 +541,25 @@ fun CheckoutScreen(
                 Spacer(Modifier.height(20.dp))
 
                 // Order Summary Section
-                SectionHeader(title = "Order Summary")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 16.dp, bottom = 12.dp, top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Order Summary",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = Color(0xFF333333)
+                    )
+                    EditUserNoteButton(
+                        hasUserNote = userNote.isNotBlank(),
+                        onClick = { showUserNoteDialog = true }
+                    )
+                }
                 ModernCard(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -572,6 +597,43 @@ fun CheckoutScreen(
                                         color = DarkPink
                                     )
                                 )
+                            }
+                        }
+
+                        // UserNote preview, shown only when a userNote has been added
+                        if (userNote.isNotBlank()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFFFF3E0))
+                                    .clickable { showUserNoteDialog = true }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Icon(
+                                    Icons.Default.Notes,
+                                    contentDescription = null,
+                                    tint = Color(0xFFE65100),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "UserNote to restaurant",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFE65100)
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        userNote,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            color = Color(0xFF666666)
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
@@ -917,6 +979,18 @@ fun CheckoutScreen(
                     )
                     showDigitalPaymentDialog = false
                     selectedDigitalPayment = null
+                }
+            )
+        }
+
+        // Edit UserNote Dialog
+        if (showUserNoteDialog) {
+            EditUserNoteDialog(
+                initialUserNote = userNote,
+                onDismiss = { showUserNoteDialog = false },
+                onSave = { note ->
+                    userNote = note.trim()
+                    showUserNoteDialog = false
                 }
             )
         }
@@ -1527,6 +1601,197 @@ fun SectionHeader(title: String) {
         modifier = Modifier.padding(start = 20.dp, bottom = 12.dp, top = 8.dp),
         color = Color(0xFF333333)
     )
+}
+
+@Composable
+fun EditUserNoteButton(
+    hasUserNote: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                brush = if (hasUserNote) {
+                    Brush.horizontalGradient(listOf(Color(0xFF4CAF50), Color(0xFF66BB6A)))
+                } else {
+                    Brush.horizontalGradient(listOf(DarkPink, DarkPink.copy(alpha = 0.85f)))
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = if (hasUserNote) Icons.Default.Check else Icons.Default.Edit,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            if (hasUserNote) "Note Added" else "Add Note",
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        )
+    }
+}
+
+@Composable
+fun EditUserNoteDialog(
+    initialUserNote: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var userNoteText by remember { mutableStateOf(initialUserNote) }
+    val maxLength = 200
+
+    // Gentle pop-in animation to match the app's other dialogs
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.85f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "userNoteDialogScale"
+    )
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                },
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color(0xFFFFF3E0), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Notes,
+                                contentDescription = null,
+                                tint = Color(0xFFE65100),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            "Add Note",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color(0xFF999999)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                Text(
+                    "Any special request for the restaurant or delivery rider? (e.g. less spicy, no onions)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF666666)
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                OutlinedTextField(
+                    value = userNoteText,
+                    onValueChange = { if (it.length <= maxLength) userNoteText = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 110.dp),
+                    placeholder = { Text("Type your note for the restaurant here...") },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = DarkPink,
+                        focusedLabelColor = DarkPink
+                    )
+                )
+
+                Text(
+                    "${userNoteText.length}/$maxLength",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF999999),
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .padding(top = 4.dp)
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (initialUserNote.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = { onSave("") },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Color(0xFFDC2626)
+                            ),
+                            border = BorderStroke(1.dp, Color(0xFFDC2626))
+                        ) {
+                            Text("Remove")
+                        }
+                    } else {
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFF5F5F5),
+                                contentColor = Color(0xFF666666)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+
+                    Button(
+                        onClick = { onSave(userNoteText) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = DarkPink,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Save Note", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
