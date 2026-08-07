@@ -13,14 +13,14 @@ plugins {
 
 android {
     namespace = "com.yumzy.userapp"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.yumzy.userapp"
         minSdk = 24
         targetSdk = 36
-        versionCode = 34
-        versionName = "34.0.1"
+        versionCode = 35
+        versionName = "35.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

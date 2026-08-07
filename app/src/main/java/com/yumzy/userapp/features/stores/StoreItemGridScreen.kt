@@ -90,8 +90,14 @@ data class StoreItem(
     val variants: List<ItemVariant> = emptyList(),
     val miniResId: String = "",
     val miniResName: String = "",
-    val priority: Int? = null
+    val priority: Int? = null,
+    val itemDiscount: Double = 0.0
 )
+
+// Applies a percentage discount to a price. Returns the original price if no discount.
+fun applyDiscount(originalPrice: Double, discountPercent: Double): Double {
+    return if (discountPercent > 0) originalPrice * (1 - discountPercent / 100.0) else originalPrice
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -189,7 +195,8 @@ fun StoreItemGridScreen(
                         variants = variants,
                         miniResId = miniResId,
                         miniResName = miniResName,
-                        priority = doc.getLong("priority")?.toInt()
+                        priority = doc.getLong("priority")?.toInt(),
+                        itemDiscount = doc.getDouble("itemDiscount") ?: 0.0
                     )
                 }
 
@@ -244,7 +251,8 @@ fun StoreItemGridScreen(
                         variants = variants,
                         miniResId = resId ?: "",
                         miniResName = resName,
-                        priority = doc.getLong("priority")?.toInt()
+                        priority = doc.getLong("priority")?.toInt(),
+                        itemDiscount = doc.getDouble("itemDiscount") ?: 0.0
                     )
                 }
 
@@ -673,6 +681,13 @@ fun MultiVariantDialog(
                         contentScale = ContentScale.Crop
                     )
 
+                    if (item.itemDiscount > 0) {
+                        DiscountRibbonBadge(
+                            discountPercent = item.itemDiscount,
+                            modifier = Modifier.align(Alignment.TopStart)
+                        )
+                    }
+
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
@@ -758,10 +773,11 @@ fun MultiVariantDialog(
                     item.variants.forEach { variant ->
                         val variantId = "${item.id}_${variant.name}"
                         val variantQuantity = cartSelection[variantId]?.quantity ?: 0
+                        val discountedVariantPrice = applyDiscount(variant.price, item.itemDiscount)
                         val genericMenuItem = com.yumzy.userapp.features.home.MenuItem(
                             id = variantId,
                             name = "${item.name} (${variant.name})",
-                            price = variant.price,
+                            price = discountedVariantPrice,
                             category = "Store Item"
                         )
 
@@ -785,12 +801,30 @@ fun MultiVariantDialog(
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold
                                     )
-                                    Text(
-                                        text = "৳${String.format("%.0f", variant.price)}",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = BrandPink
-                                    )
+                                    if (item.itemDiscount > 0) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(
+                                                text = "৳${String.format("%.0f", variant.price)}",
+                                                style = MaterialTheme.typography.bodySmall.copy(
+                                                    textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+                                                ),
+                                                color = Color.Gray
+                                            )
+                                            Text(
+                                                text = "৳${String.format("%.0f", discountedVariantPrice)}",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFFE53935)
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "৳${String.format("%.0f", variant.price)}",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BrandPink
+                                        )
+                                    }
                                 }
                                 ModernQuantitySelector(
                                     quantity = variantQuantity,
@@ -837,7 +871,7 @@ fun StoreItemDetailDialog(
     val genericMenuItem = com.yumzy.userapp.features.home.MenuItem(
         id = item.id,
         name = item.name,
-        price = item.price,
+        price = applyDiscount(item.price, item.itemDiscount),
         category = "Store Item"
     )
 
@@ -861,6 +895,13 @@ fun StoreItemDetailDialog(
                             .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
                         contentScale = ContentScale.Crop
                     )
+
+                    if (item.itemDiscount > 0) {
+                        DiscountRibbonBadge(
+                            discountPercent = item.itemDiscount,
+                            modifier = Modifier.align(Alignment.TopStart)
+                        )
+                    }
 
                     IconButton(
                         onClick = onDismiss,
@@ -953,12 +994,42 @@ fun StoreItemDetailDialog(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 10.sp
                             )
-                            Text(
-                                text = "৳${String.format("%.0f", item.price)}",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = BrandPink
-                            )
+                            if (item.itemDiscount > 0) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "৳${String.format("%.0f", item.price)}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+                                        ),
+                                        color = Color.Gray
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFFE53935).copy(alpha = 0.12f)
+                                    ) {
+                                        Text(
+                                            text = "${item.itemDiscount.toInt()}% OFF",
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            color = Color(0xFFE53935),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "৳${String.format("%.0f", applyDiscount(item.price, item.itemDiscount))}",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFE53935)
+                                )
+                            } else {
+                                Text(
+                                    text = "৳${String.format("%.0f", item.price)}",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BrandPink
+                                )
+                            }
                         }
                         ModernQuantitySelector(
                             quantity = quantity,
@@ -989,6 +1060,70 @@ fun StoreItemDetailDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun DiscountRibbonBadge(discountPercent: Double, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(topStart = 20.dp, bottomEnd = 14.dp),
+        color = Color(0xFFE53935),
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Icon(
+                Icons.Default.LocalOffer,
+                contentDescription = "Discount",
+                tint = Color.White,
+                modifier = Modifier.size(12.dp)
+            )
+            Text(
+                text = "${discountPercent.toInt()}% OFF",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun ItemPriceDisplay(
+    originalPrice: Double,
+    discountPercent: Double,
+    modifier: Modifier = Modifier,
+    priceFontSize: androidx.compose.ui.unit.TextUnit = 15.sp
+) {
+    Column(modifier = modifier) {
+        if (discountPercent > 0) {
+            val discounted = applyDiscount(originalPrice, discountPercent)
+            Text(
+                text = "৳${String.format("%.0f", originalPrice)}",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+                ),
+                color = Color.Gray,
+                fontSize = 11.sp
+            )
+            Text(
+                text = "৳${String.format("%.0f", discounted)}",
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE53935),
+                fontSize = priceFontSize
+            )
+        } else {
+            Text(
+                text = "৳${String.format("%.0f", originalPrice)}",
+                fontWeight = FontWeight.Bold,
+                color = BrandPink,
+                fontSize = priceFontSize
+            )
         }
     }
 }
@@ -1076,6 +1211,12 @@ fun StoreItemCard(
                             )
                         }
                     }
+                    if (item.itemDiscount > 0) {
+                        DiscountRibbonBadge(
+                            discountPercent = item.itemDiscount,
+                            modifier = Modifier.align(Alignment.TopStart)
+                        )
+                    }
                     if (!isItemAvailable) {
                         Box(
                             modifier = Modifier
@@ -1130,20 +1271,29 @@ fun StoreItemCard(
                                 fontSize = 10.sp
                             )
                             if (hasMultiVariant && item.variants.isNotEmpty()) {
+                                val minPrice = applyDiscount(item.variants.minOf { it.price }, item.itemDiscount)
+                                val maxPrice = applyDiscount(item.variants.maxOf { it.price }, item.itemDiscount)
+                                if (item.itemDiscount > 0) {
+                                    Text(
+                                        text = "৳${String.format("%.0f", item.variants.minOf { it.price })} - ৳${String.format("%.0f", item.variants.maxOf { it.price })}",
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+                                        ),
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
                                 Text(
-                                    text = "৳${String.format("%.0f", item.variants.minOf { it.price })} - ৳${String.format("%.0f", item.variants.maxOf { it.price })}",
+                                    text = "৳${String.format("%.0f", minPrice)} - ৳${String.format("%.0f", maxPrice)}",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = BrandPink,
+                                    color = if (item.itemDiscount > 0) Color(0xFFE53935) else BrandPink,
                                     fontSize = 15.sp
                                 )
                             } else {
-                                Text(
-                                    text = "৳${String.format("%.0f", item.price)}",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = BrandPink,
-                                    fontSize = 15.sp
+                                ItemPriceDisplay(
+                                    originalPrice = item.price,
+                                    discountPercent = item.itemDiscount
                                 )
                             }
                         }
@@ -1200,7 +1350,7 @@ fun StoreItemCard(
                             val genericMenuItem = com.yumzy.userapp.features.home.MenuItem(
                                 id = item.id,
                                 name = item.name,
-                                price = item.price,
+                                price = applyDiscount(item.price, item.itemDiscount),
                                 category = "Store Item"
                             )
                             ModernQuantitySelector(
