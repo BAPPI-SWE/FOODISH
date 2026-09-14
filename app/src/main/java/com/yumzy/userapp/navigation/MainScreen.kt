@@ -54,6 +54,7 @@ import com.yumzy.userapp.features.home.PreOrderCategoryMenuScreen
 import com.yumzy.userapp.features.home.RestaurantMenuScreen
 import com.yumzy.userapp.features.home.RestaurantType
 import com.yumzy.userapp.features.orders.OrdersScreen
+import com.yumzy.userapp.features.orders.OrderTrackingScreen
 import com.yumzy.userapp.features.profile.AccountScreen
 import com.yumzy.userapp.features.profile.EditProfileScreen
 import com.yumzy.userapp.features.stores.StoreItemGridScreen
@@ -95,6 +96,7 @@ sealed class Screen(
     data object SubCategoryList : Screen("sub_category_list", "Sub-Categories", CustomIcon(vectorIcon = Icons.Default.Home))
     data object StoreItemGrid : Screen("store_item_grid", "Store Items", CustomIcon(vectorIcon = Icons.Default.Home))
     data object Checkout : Screen("checkout", "Checkout", CustomIcon(vectorIcon = Icons.Default.Home))
+    data object OrderTracking : Screen("order_tracking", "Track Order", CustomIcon(vectorIcon = Icons.Default.Home))
     data object EditUserProfile : Screen("edit_user_profile", "Edit Profile", CustomIcon(vectorIcon = Icons.Default.Edit))
 }
 
@@ -157,6 +159,7 @@ fun MainScreen(
         "${Screen.Checkout.route}/{restaurantId}",
         "${Screen.RestaurantMenu.route}/{restaurantId}/{restaurantName}",
         "${Screen.PreOrderCategoryMenu.route}/{restaurantId}/{restaurantName}/{categoryName}",
+        "${Screen.OrderTracking.route}/{orderId}",
         Screen.EditUserProfile.route
     )
 
@@ -271,7 +274,29 @@ fun MainScreen(
                 arguments = listOf(navArgument("showAd") { type = NavType.BoolType; defaultValue = false })
             ) { backStackEntry ->
                 val showAd = backStackEntry.arguments?.getBoolean("showAd") ?: false
-                OrdersScreen(showAdOnLoad = showAd)
+                OrdersScreen(
+                    showAdOnLoad = showAd,
+                    onOrderClick = { orderId ->
+                        navController.navigate("${Screen.OrderTracking.route}/$orderId")
+                    }
+                )
+            }
+            composable(
+                route = "${Screen.OrderTracking.route}/{orderId}",
+                arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val orderId = backStackEntry.arguments?.getString("orderId") ?: ""
+                OrderTrackingScreen(
+                    orderId = orderId,
+                    onBackClicked = { navController.popBackStack() },
+                    onGoToHome = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
             }
             composable(Screen.Account.route) { backStackEntry ->
                 val shouldRefresh = backStackEntry.savedStateHandle.get<Boolean>("refresh_profile") ?: true
@@ -441,11 +466,11 @@ fun MainScreen(
                                         )
 
                                         Firebase.firestore.collection("orders").add(newOrder)
-                                            .addOnSuccessListener {
+                                            .addOnSuccessListener { newOrderRef ->
                                                 cartViewModel.clearCartForRestaurant(restaurantId)
                                                 Toast.makeText(context, "Order placed successfully!", Toast.LENGTH_SHORT).show()
                                                 navController.popBackStack(Screen.Home.route, inclusive = false)
-                                                navController.navigate("${Screen.Orders.route}?showAd=true") {
+                                                navController.navigate("${Screen.OrderTracking.route}/${newOrderRef.id}") {
                                                     popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                                     launchSingleTop = true
                                                     restoreState = false

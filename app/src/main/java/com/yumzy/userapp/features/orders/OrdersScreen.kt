@@ -32,6 +32,8 @@ import com.google.firebase.ktx.Firebase
 import com.yumzy.userapp.ads.SharedInterstitialAdManager
 import com.yumzy.userapp.ui.theme.DarkPink
 import com.yumzy.userapp.ui.theme.LightGray
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -58,11 +60,11 @@ data class Order(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrdersScreen(
-    showAdOnLoad: Boolean = false
+    showAdOnLoad: Boolean = false,
+    onOrderClick: (String) -> Unit = {}
 ) {
     var orders by remember { mutableStateOf<List<Order>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
-    var selectedOrder by remember { mutableStateOf<Order?>(null) }
     var hasShownAd by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -98,6 +100,17 @@ fun OrdersScreen(
 //                }
 //                hasShownAd = true
             }
+        }
+    }
+
+    // Live ticker so simulated early-stage statuses (Order Placed / Received /
+    // Confirmed / Preparing) progress on the list in real time, just like the
+    // tracking screen, instead of sitting on "Pending" forever.
+    var nowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            delay(1000)
+            nowMillis = System.currentTimeMillis()
         }
     }
 
@@ -198,31 +211,21 @@ fun OrdersScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(orders) { order ->
+                    val displayStatus = remember(order.orderStatus, order.createdAt, nowMillis) {
+                        if (order.orderStatus.equals("Pending", ignoreCase = true)) {
+                            computeStage(order, nowMillis).title
+                        } else {
+                            order.orderStatus
+                        }
+                    }
                     ModernOrderCard(
-                        order = order,
+                        order = order.copy(orderStatus = displayStatus),
                         userPhoneLastFour = userPhoneLastFour,
-                        onClick = { selectedOrder = order }
+                        onClick = { onOrderClick(order.id) }
                     )
                 }
             }
         }
-    }
-
-    selectedOrder?.let { order ->
-        EnhancedOrderDetailsDialog(
-            order = order,
-            userPhoneLastFour = userPhoneLastFour,
-            onDismiss = { selectedOrder = null },
-            onCancelOrder = {
-                // Redirect to WhatsApp helpline for order cancellation
-                val whatsappNumber = "8801746324620"
-                val message = "Hello, I would like to cancel my order. My phone number is $userPhone."
-                val uri = Uri.parse("https://wa.me/$whatsappNumber?text=${Uri.encode(message)}")
-                val intent = Intent(Intent.ACTION_VIEW, uri)
-                context.startActivity(intent)
-                selectedOrder = null
-            }
-        )
     }
 }
 
@@ -434,31 +437,38 @@ fun ModernOrderCard(
 @Composable
 fun StatusBadge(status: String) {
     val backgroundColor = when (status.lowercase()) {
-        "pending" -> Color(0xFFFFF4E6)
-        "confirmed" -> Color(0xFFE3F2FD)
-        "preparing" -> Color(0xFFE8F5E9)
+        "pending", "order placed" -> Color(0xFFFFF4E6)
+        "order received" -> Color(0xFFFFF4E6)
+        "confirmed", "order confirmed" -> Color(0xFFE3F2FD)
+        "preparing", "preparing your food" -> Color(0xFFFFF3E0)
+        "accepted", "rider assigned" -> Color(0xFFFFEBEE)
+        "on the way" -> Color(0xFFE3F2FD)
         "delivered" -> Color(0xFFE8F5E9)
         "cancelled" -> Color(0xFFFFEBEE)
         else -> Color(0xFFF5F5F5)
     }
 
     val textColor = when (status.lowercase()) {
-        "pending" -> Color(0xFFFF9800)
-        "confirmed" -> Color(0xFF2196F3)
-        "preparing" -> Color(0xFF4CAF50)
+        "pending", "order placed" -> Color(0xFFFF9800)
+        "order received" -> Color(0xFFFF9800)
+        "confirmed", "order confirmed" -> Color(0xFF2196F3)
+        "preparing", "preparing your food" -> Color(0xFFEF6C00)
+        "accepted", "rider assigned" -> Color(0xFFE91E1E)
+        "on the way" -> Color(0xFF1565C0)
         "delivered" -> Color(0xFF4CAF50)
         "cancelled" -> Color(0xFFF44336)
-        "accepted" -> Color(0xFFE91E1E)
         else -> Color(0xFF757575)
     }
 
     val icon = when (status.lowercase()) {
-        "pending" -> Icons.Default.Schedule
-        "confirmed" -> Icons.Default.CheckCircle
-        "preparing" -> Icons.Default.Restaurant
+        "pending", "order placed" -> Icons.Default.Schedule
+        "order received" -> Icons.Default.MarkEmailRead
+        "confirmed", "order confirmed" -> Icons.Default.CheckCircle
+        "preparing", "preparing your food" -> Icons.Default.SoupKitchen
+        "accepted", "rider assigned" -> Icons.Default.TwoWheeler
+        "on the way" -> Icons.Default.DeliveryDining
         "delivered" -> Icons.Default.Done
         "cancelled" -> Icons.Default.Close
-        "accepted" -> Icons.Default.DoneOutline
         else -> Icons.Default.Info
     }
 
@@ -489,12 +499,13 @@ fun StatusBadge(status: String) {
 
 fun getStatusColor(status: String): Color {
     return when (status.lowercase()) {
-        "pending" -> Color(0xFFFF9800)
-        "confirmed" -> Color(0xFF2196F3)
-        "preparing" -> Color(0xFF4CAF50)
+        "pending", "order placed", "order received" -> Color(0xFFFF9800)
+        "confirmed", "order confirmed" -> Color(0xFF2196F3)
+        "preparing", "preparing your food" -> Color(0xFFEF6C00)
+        "accepted", "rider assigned" -> Color(0xFFE91E1E)
+        "on the way" -> Color(0xFF1565C0)
         "delivered" -> Color(0xFF4CAF50)
         "cancelled" -> Color(0xFFF44336)
-        "accepted" -> Color(0xFFE91E1E)
         else -> Color(0xFF757575)
     }
 }
