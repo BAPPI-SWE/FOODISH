@@ -213,7 +213,7 @@ fun OrdersScreen(
                 items(orders) { order ->
                     val displayStatus = remember(order.orderStatus, order.createdAt, nowMillis) {
                         if (order.orderStatus.equals("Pending", ignoreCase = true)) {
-                            computeStage(order, nowMillis).title
+                            computeProgress(order, nowMillis).activeStage.title
                         } else {
                             order.orderStatus
                         }

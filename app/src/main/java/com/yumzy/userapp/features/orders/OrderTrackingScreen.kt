@@ -41,38 +41,90 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
 // ---------------------------------------------------------------------------
-// Tracking stages. The first four are simulated purely on the client using
-// elapsed time since the order was created. The last three mirror the real
-// "orderStatus" field that the restaurant/admin updates in Firestore.
+// Tracking stages, in the order they are displayed. The first three are
+// simulated purely on the client using elapsed time since the order was
+// created. ACCEPTED/ON_THE_WAY/DELIVERED mirror the real "orderStatus" field
+// that the restaurant/admin updates in Firestore. Note PREPARING sits AFTER
+// ACCEPTED: once a rider is assigned the kitchen is still cooking, so the
+// "Preparing" status stays the active one until the order is actually picked
+// up ("On the way").
 // ---------------------------------------------------------------------------
 enum class TrackingStage(val stepIndex: Int, val title: String, val subtitle: String) {
     PLACED(1, "Order Placed", "We've sent your order to the restaurant"),
     RECEIVED(2, "Order Received", "The restaurant has seen your order"),
     ORDER_CONFIRMED(3, "Order Confirmed", "Your order has been confirmed"),
-    PREPARING(4, "Preparing Your Food", "The kitchen is cooking up your meal"),
-    ACCEPTED(5, "Rider Assigned", "A rider has been assigned to your order"),
+    ACCEPTED(4, "Rider Assigned", "A rider has been assigned and will pick up your order once it's ready"),
+    PREPARING(5, "Preparing Your Food", "The kitchen is cooking up your meal"),
     ON_THE_WAY(6, "On The Way", "Your food is heading to your doorstep"),
     DELIVERED(7, "Delivered", "Enjoy your meal! Thanks for ordering")
 }
 
 private enum class StepState { DONE, ACTIVE, PENDING }
 
-fun computeStage(order: Order, nowMillis: Long): TrackingStage {
+// The step currently "in progress", plus every step that has already been
+// reached (shown as completed). These are tracked separately because a real
+// backend event (a rider accepting the order) can mark ACCEPTED as reached
+// while PREPARING stays the active/ongoing step.
+data class TrackingProgress(val activeStage: TrackingStage, val reachedStages: Set<TrackingStage>)
+
+fun computeProgress(order: Order, nowMillis: Long): TrackingProgress {
     val status = order.orderStatus.trim()
+    val allUpToPreparing = setOf(
+        TrackingStage.PLACED, TrackingStage.RECEIVED, TrackingStage.ORDER_CONFIRMED,
+        TrackingStage.ACCEPTED, TrackingStage.PREPARING
+    )
     return when {
-        status.equals("Delivered", ignoreCase = true) -> TrackingStage.DELIVERED
-        status.equals("On the way", ignoreCase = true) -> TrackingStage.ON_THE_WAY
-        status.equals("Accepted", ignoreCase = true) -> TrackingStage.ACCEPTED
+        status.equals("Delivered", ignoreCase = true) ->
+            TrackingProgress(TrackingStage.DELIVERED, allUpToPreparing + TrackingStage.ON_THE_WAY + TrackingStage.DELIVERED)
+        status.equals("On the way", ignoreCase = true) ->
+            TrackingProgress(TrackingStage.ON_THE_WAY, allUpToPreparing + TrackingStage.ON_THE_WAY)
+        status.equals("Accepted", ignoreCase = true) ->
+            // Rider is assigned (ACCEPTED reached), but the kitchen keeps
+            // cooking — PREPARING remains the active, ongoing status.
+            TrackingProgress(TrackingStage.PREPARING, allUpToPreparing)
         else -> {
             val elapsedSec = (nowMillis - order.createdAt.toDate().time) / 1000
             when {
-                elapsedSec < 20 -> TrackingStage.PLACED
-                elapsedSec < 60 -> TrackingStage.RECEIVED
-                elapsedSec < 120 -> TrackingStage.ORDER_CONFIRMED
-                else -> TrackingStage.PREPARING
+                elapsedSec < 20 -> TrackingProgress(TrackingStage.PLACED, setOf(TrackingStage.PLACED))
+                elapsedSec < 60 -> TrackingProgress(TrackingStage.RECEIVED, setOf(TrackingStage.PLACED, TrackingStage.RECEIVED))
+                elapsedSec < 120 -> TrackingProgress(
+                    TrackingStage.ORDER_CONFIRMED,
+                    setOf(TrackingStage.PLACED, TrackingStage.RECEIVED, TrackingStage.ORDER_CONFIRMED)
+                )
+                else -> TrackingProgress(
+                    TrackingStage.PREPARING,
+                    setOf(TrackingStage.PLACED, TrackingStage.RECEIVED, TrackingStage.ORDER_CONFIRMED, TrackingStage.PREPARING)
+                )
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Foodpanda-style estimated delivery window, e.g. "27-33 min". Starts
+// counting only once the "Preparing" status actually begins (not from when
+// the order was placed) and counts down from an initial 29-35 minute window.
+// If it gets close to running out while the order still hasn't been picked
+// up, it automatically pushes the window back further — same trick delivery
+// apps use rather than showing a countdown hit zero while food is still
+// cooking. Once the rider is on the way (or the order is delivered), this
+// estimate is no longer shown.
+// ---------------------------------------------------------------------------
+fun computeEtaRangeMinutes(orderId: String, preparingStartMillis: Long, nowMillis: Long): Pair<Int, Int> {
+    val elapsedMin = (nowMillis - preparingStartMillis) / 60000.0
+    val seed = kotlin.math.abs(orderId.hashCode())
+    val extensionStep = 8 + (seed % 7) // bump by 8-14 minutes each time it runs low
+    var lower = 29.0
+    var upper = 35.0
+    var guard = 0
+    while (lower - elapsedMin <= 3 && guard < 50) {
+        lower += extensionStep
+        upper += extensionStep
+        guard++
+    }
+    val remLower = (lower - elapsedMin).toInt().coerceAtLeast(2)
+    val remUpper = (upper - elapsedMin).toInt().coerceAtLeast(remLower + 3)
+    return remLower to remUpper
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -191,12 +243,27 @@ fun OrderTrackingScreen(
         }
 
         val isCancelled = currentOrder.orderStatus.equals("Cancelled", ignoreCase = true)
-        val stage = computeStage(currentOrder, nowMillis)
+        val progress = computeProgress(currentOrder, nowMillis)
+        val stage = progress.activeStage
 
-        // Reactive 5-minute cancellation countdown — recalculated every second
+        // The ETA countdown should only start ticking once the order is
+        // actually being prepared — not from the moment it was placed. We
+        // capture the wall-clock time the very first time we observe the
+        // active stage become PREPARING, and count from there.
+        var preparingStartMillis by remember(orderId) { mutableStateOf<Long?>(null) }
+        LaunchedEffect(stage) {
+            if (stage == TrackingStage.PREPARING && preparingStartMillis == null) {
+                preparingStartMillis = System.currentTimeMillis()
+            }
+        }
+
+        val showEta = !isCancelled && stage == TrackingStage.PREPARING && preparingStartMillis != null
+        val etaRange = if (showEta) computeEtaRangeMinutes(currentOrder.id, preparingStartMillis!!, nowMillis) else null
+
+        // Reactive 3-minute cancellation countdown — recalculated every second
         // via the nowMillis ticker so it counts down live on screen.
         val elapsedSecSinceOrder = (nowMillis - currentOrder.createdAt.toDate().time) / 1000
-        val remainingCancelSec = (300 - elapsedSecSinceOrder).coerceAtLeast(0)
+        val remainingCancelSec = (180 - elapsedSecSinceOrder).coerceAtLeast(0)
         val isCancellable = remainingCancelSec > 0 && currentOrder.orderStatus == "Pending"
         val cancelCountdownText = String.format(
             "%02d:%02d",
@@ -234,7 +301,7 @@ fun OrderTrackingScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 32.dp)
         ) {
-            HeroStatusHeader(order = currentOrder, stage = stage, isCancelled = isCancelled)
+            HeroStatusHeader(order = currentOrder, stage = stage, isCancelled = isCancelled, etaRange = etaRange)
 
             Spacer(Modifier.height(20.dp))
 
@@ -242,9 +309,11 @@ fun OrderTrackingScreen(
                 CancelledCard(context = context, userPhone = userPhone)
             } else {
                 TrackingTimelineCard(
-                    stage = stage,
+                    activeStage = progress.activeStage,
+                    reachedStages = progress.reachedStages,
                     order = currentOrder,
                     riderPhone = riderPhone,
+                    etaRange = etaRange,
                     context = context
                 )
             }
@@ -310,7 +379,7 @@ fun OrderTrackingScreen(
 // Hero header — big animated icon + headline that reflects the live stage
 // ---------------------------------------------------------------------------
 @Composable
-private fun HeroStatusHeader(order: Order, stage: TrackingStage, isCancelled: Boolean) {
+private fun HeroStatusHeader(order: Order, stage: TrackingStage, isCancelled: Boolean, etaRange: Pair<Int, Int>?) {
     val (icon, gradientColors, headline, sub) = when {
         isCancelled -> HeroContent(
             Icons.Default.Cancel,
@@ -415,6 +484,33 @@ private fun HeroStatusHeader(order: Order, stage: TrackingStage, isCancelled: Bo
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center
             )
+            if (etaRange != null) {
+                Spacer(Modifier.height(14.dp))
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color.White.copy(alpha = 0.22f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Timer,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Arriving in ${etaRange.first}-${etaRange.second} min",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(10.dp))
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -496,9 +592,11 @@ private fun CancelledCard(context: android.content.Context, userPhone: String) {
 // ---------------------------------------------------------------------------
 @Composable
 private fun TrackingTimelineCard(
-    stage: TrackingStage,
+    activeStage: TrackingStage,
+    reachedStages: Set<TrackingStage>,
     order: Order,
     riderPhone: String,
+    etaRange: Pair<Int, Int>?,
     context: android.content.Context
 ) {
     Card(
@@ -511,8 +609,8 @@ private fun TrackingTimelineCard(
             val stages = TrackingStage.values().toList()
             stages.forEach { s ->
                 val state = when {
-                    s.stepIndex < stage.stepIndex -> StepState.DONE
-                    s.stepIndex == stage.stepIndex -> StepState.ACTIVE
+                    s == activeStage -> StepState.ACTIVE
+                    s in reachedStages -> StepState.DONE
                     else -> StepState.PENDING
                 }
                 // Steps not yet reached stay completely hidden and reveal
@@ -528,7 +626,7 @@ private fun TrackingTimelineCard(
                         isLast = state == StepState.ACTIVE
                     ) {
                         when {
-                            s == TrackingStage.PREPARING && state == StepState.ACTIVE -> CookingAnimationRow()
+                            s == TrackingStage.PREPARING && state == StepState.ACTIVE -> CookingAnimationRow(etaRange = etaRange)
                             s == TrackingStage.ACCEPTED && state != StepState.PENDING -> RiderInfoCard(
                                 order = order,
                                 riderPhone = riderPhone,
@@ -636,7 +734,7 @@ private fun extraContentPresent(stage: TrackingStage, state: StepState): Boolean
 // Cooking animation — gently bouncing utensil + animated dots
 // ---------------------------------------------------------------------------
 @Composable
-private fun CookingAnimationRow() {
+private fun CookingAnimationRow(etaRange: Pair<Int, Int>?) {
     val infiniteTransition = rememberInfiniteTransition(label = "cooking")
     val bounce by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -655,26 +753,34 @@ private fun CookingAnimationRow() {
         shape = RoundedCornerShape(14.dp),
         color = Color(0xFFFFF3E0)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Default.SoupKitchen,
-                contentDescription = null,
-                tint = Color(0xFFEF6C00),
-                modifier = Modifier
-                    .size(22.dp)
-                    .graphicsLayer { translationY = bounce }
-            )
-            Spacer(Modifier.width(10.dp))
-            val dots = ".".repeat((dotCount.toInt() % 3) + 1)
-            Text(
-                "Your food is cooking$dots",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color(0xFFEF6C00)
-            )
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.SoupKitchen,
+                    contentDescription = null,
+                    tint = Color(0xFFEF6C00),
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer { translationY = bounce }
+                )
+                Spacer(Modifier.width(10.dp))
+                val dots = ".".repeat((dotCount.toInt() % 3) + 1)
+                Text(
+                    "Your food is cooking$dots",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFFEF6C00)
+                )
+            }
+            if (etaRange != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Estimated delivery: ${etaRange.first}-${etaRange.second} min",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFB86200)
+                )
+            }
         }
     }
 }
