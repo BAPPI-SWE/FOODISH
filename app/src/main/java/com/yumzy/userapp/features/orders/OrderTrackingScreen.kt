@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -104,27 +105,32 @@ fun computeProgress(order: Order, nowMillis: Long): TrackingProgress {
 // Foodpanda-style estimated delivery window, e.g. "27-33 min". Starts
 // counting only once the "Preparing" status actually begins (not from when
 // the order was placed) and counts down from an initial 29-35 minute window.
-// If it gets close to running out while the order still hasn't been picked
-// up, it automatically pushes the window back further — same trick delivery
-// apps use rather than showing a countdown hit zero while food is still
-// cooking. Once the rider is on the way (or the order is delivered), this
-// estimate is no longer shown.
+// If it gets down to 5 minutes remaining while the order still hasn't been
+// picked up, it pushes the window back by a clear 12-18 minutes — same trick
+// delivery apps use rather than showing a countdown hit zero while food is
+// still cooking. `extended` tells the caller this has happened at least
+// once, so the UI can show a short "kitchen's a bit busier than usual" note
+// instead of the number silently jumping with no explanation. Once the
+// rider is on the way (or the order is delivered), this estimate is no
+// longer shown.
 // ---------------------------------------------------------------------------
-fun computeEtaRangeMinutes(orderId: String, preparingStartMillis: Long, nowMillis: Long): Pair<Int, Int> {
+data class EtaEstimate(val lowerMin: Int, val upperMin: Int, val extended: Boolean)
+
+fun computeEtaEstimate(orderId: String, preparingStartMillis: Long, nowMillis: Long): EtaEstimate {
     val elapsedMin = (nowMillis - preparingStartMillis) / 60000.0
     val seed = kotlin.math.abs(orderId.hashCode())
-    val extensionStep = 8 + (seed % 7) // bump by 8-14 minutes each time it runs low
+    val extensionStep = 12 + (seed % 7) // bump by 12-18 minutes each time it runs low
     var lower = 29.0
     var upper = 35.0
     var guard = 0
-    while (lower - elapsedMin <= 3 && guard < 50) {
+    while (lower - elapsedMin <= 5 && guard < 50) {
         lower += extensionStep
         upper += extensionStep
         guard++
     }
     val remLower = (lower - elapsedMin).toInt().coerceAtLeast(2)
     val remUpper = (upper - elapsedMin).toInt().coerceAtLeast(remLower + 3)
-    return remLower to remUpper
+    return EtaEstimate(remLower, remUpper, guard > 0)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -180,7 +186,8 @@ fun OrderTrackingScreen(
                         deliveryCharge = doc.getDouble("deliveryCharge") ?: 0.0,
                         serviceCharge = doc.getDouble("serviceCharge") ?: 0.0,
                         riderName = doc.getString("riderName") ?: "",
-                        riderId = doc.getString("riderId") ?: ""
+                        riderId = doc.getString("riderId") ?: "",
+                        preparingStartedAt = doc.getTimestamp("preparingStartedAt")
                     )
                 }
             }
@@ -247,18 +254,27 @@ fun OrderTrackingScreen(
         val stage = progress.activeStage
 
         // The ETA countdown should only start ticking once the order is
-        // actually being prepared — not from the moment it was placed. We
-        // capture the wall-clock time the very first time we observe the
-        // active stage become PREPARING, and count from there.
-        var preparingStartMillis by remember(orderId) { mutableStateOf<Long?>(null) }
+        // actually being prepared — not from the moment it was placed, and
+        // it must survive navigating away, closing the app, or being viewed
+        // from another device. So instead of keeping this in local state, we
+        // persist it to Firestore the very first time ANY viewer observes
+        // this order enter PREPARING, then everyone just reads that same
+        // timestamp back. The write only fires once per order: the `stage`
+        // key means this effect body doesn't re-run on every tick, and the
+        // guard below skips it entirely once `preparingStartedAt` is already
+        // set on the order (including right after our own write comes back
+        // through the snapshot listener).
         LaunchedEffect(stage) {
-            if (stage == TrackingStage.PREPARING && preparingStartMillis == null) {
-                preparingStartMillis = System.currentTimeMillis()
+            if (stage == TrackingStage.PREPARING && currentOrder.preparingStartedAt == null) {
+                Firebase.firestore.collection("orders").document(orderId)
+                    .update("preparingStartedAt", Timestamp.now())
+                    .addOnFailureListener { /* another viewer may have already set it — safe to ignore */ }
             }
         }
 
+        val preparingStartMillis = currentOrder.preparingStartedAt?.toDate()?.time
         val showEta = !isCancelled && stage == TrackingStage.PREPARING && preparingStartMillis != null
-        val etaRange = if (showEta) computeEtaRangeMinutes(currentOrder.id, preparingStartMillis!!, nowMillis) else null
+        val etaEstimate = if (showEta) computeEtaEstimate(currentOrder.id, preparingStartMillis!!, nowMillis) else null
 
         // Reactive 3-minute cancellation countdown — recalculated every second
         // via the nowMillis ticker so it counts down live on screen.
@@ -301,7 +317,7 @@ fun OrderTrackingScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(bottom = 32.dp)
         ) {
-            HeroStatusHeader(order = currentOrder, stage = stage, isCancelled = isCancelled, etaRange = etaRange)
+            HeroStatusHeader(order = currentOrder, stage = stage, isCancelled = isCancelled, etaEstimate = etaEstimate)
 
             Spacer(Modifier.height(20.dp))
 
@@ -313,14 +329,14 @@ fun OrderTrackingScreen(
                     reachedStages = progress.reachedStages,
                     order = currentOrder,
                     riderPhone = riderPhone,
-                    etaRange = etaRange,
+                    etaEstimate = etaEstimate,
                     context = context
                 )
             }
 
             Spacer(Modifier.height(20.dp))
 
-            OrderItemsCard(order = currentOrder)
+            OrderItemsCard(order = currentOrder, userPhone = userPhone)
 
             Spacer(Modifier.height(20.dp))
 
@@ -379,7 +395,7 @@ fun OrderTrackingScreen(
 // Hero header — big animated icon + headline that reflects the live stage
 // ---------------------------------------------------------------------------
 @Composable
-private fun HeroStatusHeader(order: Order, stage: TrackingStage, isCancelled: Boolean, etaRange: Pair<Int, Int>?) {
+private fun HeroStatusHeader(order: Order, stage: TrackingStage, isCancelled: Boolean, etaEstimate: EtaEstimate?) {
     val (icon, gradientColors, headline, sub) = when {
         isCancelled -> HeroContent(
             Icons.Default.Cancel,
@@ -484,7 +500,7 @@ private fun HeroStatusHeader(order: Order, stage: TrackingStage, isCancelled: Bo
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center
             )
-            if (etaRange != null) {
+            if (etaEstimate != null) {
                 Spacer(Modifier.height(14.dp))
                 Surface(
                     shape = RoundedCornerShape(24.dp),
@@ -503,12 +519,22 @@ private fun HeroStatusHeader(order: Order, stage: TrackingStage, isCancelled: Bo
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "Arriving in ${etaRange.first}-${etaRange.second} min",
+                            "Arriving in ${etaEstimate.lowerMin}-${etaEstimate.upperMin} min",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
+                if (etaEstimate.extended) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Kitchen's a bit busier than usual — estimate updated",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 11.sp,
+                        fontStyle = FontStyle.Italic,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -596,7 +622,7 @@ private fun TrackingTimelineCard(
     reachedStages: Set<TrackingStage>,
     order: Order,
     riderPhone: String,
-    etaRange: Pair<Int, Int>?,
+    etaEstimate: EtaEstimate?,
     context: android.content.Context
 ) {
     Card(
@@ -626,7 +652,7 @@ private fun TrackingTimelineCard(
                         isLast = state == StepState.ACTIVE
                     ) {
                         when {
-                            s == TrackingStage.PREPARING && state == StepState.ACTIVE -> CookingAnimationRow(etaRange = etaRange)
+                            s == TrackingStage.PREPARING && state == StepState.ACTIVE -> CookingAnimationRow(etaEstimate = etaEstimate)
                             s == TrackingStage.ACCEPTED && state != StepState.PENDING -> RiderInfoCard(
                                 order = order,
                                 riderPhone = riderPhone,
@@ -734,7 +760,7 @@ private fun extraContentPresent(stage: TrackingStage, state: StepState): Boolean
 // Cooking animation — gently bouncing utensil + animated dots
 // ---------------------------------------------------------------------------
 @Composable
-private fun CookingAnimationRow(etaRange: Pair<Int, Int>?) {
+private fun CookingAnimationRow(etaEstimate: EtaEstimate?) {
     val infiniteTransition = rememberInfiniteTransition(label = "cooking")
     val bounce by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -772,14 +798,22 @@ private fun CookingAnimationRow(etaRange: Pair<Int, Int>?) {
                     color = Color(0xFFEF6C00)
                 )
             }
-            if (etaRange != null) {
+            if (etaEstimate != null) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Estimated delivery: ${etaRange.first}-${etaRange.second} min",
+                    "Estimated delivery: ${etaEstimate.lowerMin}-${etaEstimate.upperMin} min",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFFB86200)
                 )
+                if (etaEstimate.extended) {
+                    Text(
+                        "Running a little longer than usual today",
+                        fontSize = 11.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = Color(0xFFB86200).copy(alpha = 0.85f)
+                    )
+                }
             }
         }
     }
@@ -907,7 +941,9 @@ private fun OnTheWayAnimationRow() {
 // Order items summary
 // ---------------------------------------------------------------------------
 @Composable
-private fun OrderItemsCard(order: Order) {
+private fun OrderItemsCard(order: Order, userPhone: String) {
+    val userPhoneLastFour = if (userPhone.length >= 4) userPhone.takeLast(4) else userPhone
+
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(20.dp),
@@ -931,6 +967,30 @@ private fun OrderItemsCard(order: Order) {
                 fontSize = 12.sp,
                 color = Color(0xFF757575)
             )
+
+            // User ID row (last 4 digits of phone, shown for reference) —
+            // matches the Orders list card.
+            if (userPhoneLastFour.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = Color(0xFF999999),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "User ID: *$userPhoneLastFour",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF999999),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+
             Spacer(Modifier.height(14.dp))
             HorizontalDivider(color = Color(0xFFEFEFEF))
             Spacer(Modifier.height(14.dp))

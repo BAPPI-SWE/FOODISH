@@ -54,7 +54,11 @@ data class Order(
     val deliveryCharge: Double = 0.0,
     val serviceCharge: Double = 0.0,
     val riderName: String = "",
-    val riderId: String = ""
+    val riderId: String = "",
+    // Persisted once, the first time any device observes this order enter
+    // the "Preparing" stage — lets the ETA countdown survive navigation,
+    // app restarts, and being viewed from a different device.
+    val preparingStartedAt: Timestamp? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
