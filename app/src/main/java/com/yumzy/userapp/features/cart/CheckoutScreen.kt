@@ -27,6 +27,13 @@ import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import android.widget.Toast
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
@@ -473,9 +480,9 @@ fun CheckoutScreen(
                     onConfirmClick = {
                         val paymentString = when (selectedPaymentMethod.type) {
                             PaymentType.COD -> "COD"
-                            PaymentType.BKASH -> "Bkash,01970102586,${selectedPaymentMethod.details}"
-                            PaymentType.NAGAD -> "Nagad,01988143409,${selectedPaymentMethod.details}"
-                            PaymentType.ROCKET -> "Rocket,017463246207,${selectedPaymentMethod.details}"
+                            PaymentType.BKASH -> "Bkash,${getPaymentNumber(PaymentType.BKASH)},${selectedPaymentMethod.details}"
+                            PaymentType.NAGAD -> "Nagad,${getPaymentNumber(PaymentType.NAGAD)},${selectedPaymentMethod.details}"
+                            PaymentType.ROCKET -> "Rocket,${getPaymentNumber(PaymentType.ROCKET)},${selectedPaymentMethod.details}"
                         }
 
                         showCelebration = true
@@ -1284,28 +1291,16 @@ fun DigitalPaymentDialog(
                 exit = fadeOut() + scaleOut()
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp)
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    Text(
-                        "Send Money to ${getPaymentNumberForDisplay(paymentType)}",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-
-                    Text(
-                        "Send money to ${getPaymentNumber(paymentType)} and enter your details below:",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = Color(0xFF666666)
-                        ),
-                        modifier = Modifier.padding(bottom = 20.dp)
-                    )
+                    PaymentInstructionHeader(paymentType = paymentType)
 
                     OutlinedTextField(
                         value = mobileNumber,
                         onValueChange = { mobileNumber = it },
-                        label = { Text("Mobile Number") },
+                        label = { Text(if (paymentType == PaymentType.BKASH) "আপনার বিকাশ নম্বর" else "Mobile Number") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -1319,7 +1314,7 @@ fun DigitalPaymentDialog(
                     OutlinedTextField(
                         value = transactionId,
                         onValueChange = { transactionId = it },
-                        label = { Text("Transaction ID") },
+                        label = { Text(if (paymentType == PaymentType.BKASH) "ট্রান্সেকশন আইডি (TrxID)" else "Transaction ID") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -1457,9 +1452,134 @@ fun PaymentCardSelection(paymentType: PaymentType) {
         )
     }
 }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PaymentInstructionHeader(paymentType: PaymentType) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val number = getPaymentNumber(paymentType)
+    val isBkash = paymentType == PaymentType.BKASH
+    val brandColor = when (paymentType) {
+        PaymentType.BKASH -> Color(0xFFE2136E)
+        PaymentType.NAGAD -> Color(0xFFF15A29)
+        else -> Color(0xFF00AEEF)
+    }
+    val brandName = when (paymentType) {
+        PaymentType.BKASH -> "bKash"
+        PaymentType.NAGAD -> "Nagad"
+        else -> "Rocket"
+    }
+
+    // Title: bKash is "Payment", the others stay "Send Money"
+    Text(
+        if (isBkash) "Payment to bKash" else "Send Money to $brandName",
+        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+        modifier = Modifier.padding(bottom = 12.dp)
+    )
+
+    // Number card with copy button
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = brandColor.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, brandColor.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (isBkash) "বিকাশ পেমেন্ট নম্বর" else "$brandName Number",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF666666)
+                )
+                Text(
+                    number,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    ),
+                    color = brandColor
+                )
+            }
+            Surface(
+                onClick = {
+                    clipboard.setText(AnnotatedString(number))
+                    Toast.makeText(context, "নম্বর কপি হয়েছে", Toast.LENGTH_SHORT).show()
+                },
+                shape = RoundedCornerShape(10.dp),
+                color = brandColor
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "Copy number",
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Copy", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(14.dp))
+
+    if (isBkash) {
+        // Highlighted bengali instructions: use "Payment", NOT "Send Money"
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = Color(0xFFFFF8E1),
+            border = BorderStroke(1.dp, Color(0xFFFFC107)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    buildAnnotatedString {
+                        append("আপনার বিকাশ অ্যাপ থেকে ")
+                        withStyle(
+                            SpanStyle(
+                                color = Color.White,
+                                background = Color(0xFFE2136E),
+                                fontWeight = FontWeight.Bold
+                            )
+                        ) { append(" Payment ") }
+                        append(" অপশনটি সিলেক্ট করে উপরের নম্বরে পেমেন্ট করুন।")
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF3E2723)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "⚠️ এটি \"Send Money\" নয় — অবশ্যই \"Payment\" অপশন ব্যবহার করুন।",
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = Color(0xFFD84315)
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "পেমেন্ট সম্পন্ন হলে নিচে আপনার ফোন নম্বর এবং ট্রান্সেকশন আইডি দিন।",
+            style = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFF666666)),
+            modifier = Modifier.padding(bottom = 18.dp)
+        )
+    } else {
+        Text(
+            "Send money to $number and enter your details below:",
+            style = MaterialTheme.typography.bodyMedium.copy(color = Color(0xFF666666)),
+            modifier = Modifier.padding(bottom = 18.dp)
+        )
+    }
+}
+
 fun getPaymentNumber(paymentType: PaymentType): String {
     return when (paymentType) {
-        PaymentType.BKASH -> "01970102586"
+        PaymentType.BKASH -> "01315519033"
         PaymentType.NAGAD -> "01988143409"
         PaymentType.ROCKET -> "017463246207"
         else -> ""
@@ -1468,7 +1588,7 @@ fun getPaymentNumber(paymentType: PaymentType): String {
 
 fun getPaymentNumberForDisplay(paymentType: PaymentType): String {
     return when (paymentType) {
-        PaymentType.BKASH -> "Bkash: 01970102586"
+        PaymentType.BKASH -> "Bkash: 01315519033"
         PaymentType.NAGAD -> "Nagad: 01988143409"
         PaymentType.ROCKET -> "Rocket: 017463246207"
         else -> ""
